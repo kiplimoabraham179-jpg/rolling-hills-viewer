@@ -23,7 +23,7 @@ function Tree({ palette }: { palette: LandscapePalette }) {
     mesh.computeBoundingSphere();
   }, [tree, palette]);
   useEffect(() => () => tree.geometry?.dispose(), [tree]);
-  return <group position={[0, heightAt(0, 0), 0]}>
+  return <group position={[0, heightAt(0, 0), 0]} scale={1.18}>
     {tree.geometry && <mesh geometry={tree.geometry} castShadow receiveShadow><meshStandardMaterial color={palette.bark} roughness={.98} /></mesh>}
     <instancedMesh ref={leaves} args={[undefined, undefined, tree.leaves.length]} castShadow receiveShadow>
       <octahedronGeometry args={[1, 0]} />
@@ -38,7 +38,7 @@ function Forest({ palette }: { palette: LandscapePalette }) {
     const mesh = meshRef.current;
     if (!mesh) return;
     const random = seededRandom(6), dummy = new THREE.Object3D();
-    for (let i = 0; i < 1700; i++) {
+    for (let i = 0; i < 3600; i++) {
       const angle = random() * Math.PI * 2, radius = 35 + random() * 95;
       const x = Math.cos(angle) * radius, z = Math.sin(angle) * radius;
       const h = 1.8 + random() * 3.4;
@@ -52,7 +52,7 @@ function Forest({ palette }: { palette: LandscapePalette }) {
     if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
     mesh.computeBoundingSphere();
   }, [palette]);
-  return <instancedMesh ref={meshRef} args={[undefined, undefined, 1700]}>
+  return <instancedMesh ref={meshRef} args={[undefined, undefined, 3600]}>
     <coneGeometry args={[1, 1, 5]} /><meshStandardMaterial roughness={1} />
   </instancedMesh>;
 }
@@ -62,7 +62,7 @@ function Atmosphere({ palette }: { palette: LandscapePalette }) {
     const geo = new THREE.SphereGeometry(650, 32, 16);
     const p = geo.getAttribute('position'), colors: number[] = [];
     for (let i = 0; i < p.count; i++) {
-      const blend = THREE.MathUtils.smoothstep(p.getY(i) / 650, -.05, .65);
+      const blend = THREE.MathUtils.smoothstep(p.getY(i) / 650, -.08, .32);
       palette.mist.clone().lerp(palette.sky, blend).toArray(colors, i * 3);
     }
     geo.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));

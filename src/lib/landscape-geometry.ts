@@ -12,11 +12,12 @@ export function heightAt(x: number, z: number) {
   const hill = 8 * Math.exp(-(x * x / 850 + z * z / 1000));
   const rolls = 3.2 * Math.sin(x * .047 + .4) * Math.cos(z * .052) + 1.2 * Math.sin(z * .11 + x * .025);
   const valley = -9 * Math.exp(-((z + 42) ** 2 / 450)) * Math.exp(-(x * x / 900));
-  return hill + rolls + valley - 3;
+  const slopes = 20 * Math.exp(-((Math.abs(x) - 67) ** 2 / 800 + (z + 48) ** 2 / 3000));
+  return hill + rolls + valley + slopes - 3;
 }
 
 export function makeTerrain(grass: THREE.Color, light: THREE.Color, forest: THREE.Color) {
-  const geometry = new THREE.PlaneGeometry(300, 300, 150, 150);
+  const geometry = new THREE.PlaneGeometry(300, 300, 110, 110);
   geometry.rotateX(-Math.PI / 2);
   const positions = geometry.getAttribute('position');
   const colors = new Float32Array(positions.count * 3);
@@ -72,7 +73,7 @@ export function makeTree() {
     branches.push(geo);
   }
   function foliage(center: THREE.Vector3, size: number) {
-    for (let i = 0; i < 55; i++) {
+    for (let i = 0; i < 42; i++) {
       const a = random() * Math.PI * 2, cos = random() * 2 - 1;
       const r = Math.cbrt(random()) * size;
       const sin = Math.sqrt(1 - cos * cos);

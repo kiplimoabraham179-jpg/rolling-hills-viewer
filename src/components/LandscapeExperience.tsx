@@ -7,7 +7,7 @@ import { Expand, Minimize, Minus, Plus, RotateCcw, Orbit, TreeDeciduous, LoaderC
 import { Button } from '@/components/ui/button';
 import { LandscapeScene, type LandscapePalette } from './LandscapeScene';
 
-const INITIAL_POSITION: [number, number, number] = [27, 21, 48];
+const INITIAL_POSITION: [number, number, number] = [0, 22, 49];
 const INITIAL_TARGET: [number, number, number] = [0, 17, 0];
 
 class SceneBoundary extends Component<{ children: ReactNode }, { failed: boolean }> {
@@ -26,6 +26,7 @@ export default function LandscapeExperience() {
   const [rotating, setRotating] = useState(false);
   const [fullscreen, setFullscreen] = useState(false);
   const [contextLost, setContextLost] = useState(false);
+  const [unavailable, setUnavailable] = useState(false);
   const [notice, setNotice] = useState('');
 
   useEffect(() => {
@@ -41,6 +42,10 @@ export default function LandscapeExperience() {
       return [key, new THREE.Color().setRGB((pixel[0] ?? 0) / 255, (pixel[1] ?? 0) / 255, (pixel[2] ?? 0) / 255, THREE.SRGBColorSpace)];
     });
     setPalette(Object.fromEntries(entries) as LandscapePalette);
+    const probe = document.createElement('canvas');
+    const webgl = probe.getContext('webgl2');
+    if (!webgl) setUnavailable(true);
+    else webgl.getExtension('WEBGL_lose_context')?.loseContext();
     const updateFullscreen = () => setFullscreen(Boolean(document.fullscreenElement));
     document.addEventListener('fullscreenchange', updateFullscreen);
     return () => document.removeEventListener('fullscreenchange', updateFullscreen);
@@ -70,7 +75,7 @@ export default function LandscapeExperience() {
   return <div className="landscape-app" ref={container}>
     <SceneBoundary>
       <div className="landscape-canvas" aria-label="Interactive 3D landscape with a golden-green tree and mountain valley">
-        {palette && <Canvas shadows dpr={[1, 1.5]} camera={{ position: INITIAL_POSITION, fov: 44, near: .2, far: 1000 }} gl={{ antialias: true, powerPreference: 'high-performance' }}
+        {palette && !unavailable && <Canvas shadows={{ type: THREE.PCFShadowMap }} dpr={[1, 1.5]} camera={{ position: INITIAL_POSITION, fov: 44, near: .2, far: 1000 }} gl={{ antialias: true, powerPreference: 'high-performance' }}
           fallback={<div className="scene-loading" role="alert"><p>WebGL isn’t available in this browser.</p><small>Try a browser with hardware acceleration enabled.</small></div>}
           onCreated={({ gl }) => {
             gl.toneMapping = THREE.ACESFilmicToneMapping; gl.toneMappingExposure = 1.05;
@@ -82,7 +87,8 @@ export default function LandscapeExperience() {
             minDistance={15} maxDistance={125} minPolarAngle={.12} maxPolarAngle={Math.PI / 2 - .035} zoomSpeed={.7} rotateSpeed={.6} panSpeed={.7} />
         </Canvas>}
       </div>
-      {!ready && <div className="scene-loading" role="status"><LoaderCircle className="animate-spin" size={25} /><p>Growing your landscape…</p></div>}
+      {!ready && !unavailable && <div className="scene-loading" role="status"><LoaderCircle className="motion-safe:animate-spin" size={25} /><p>Growing your landscape…</p></div>}
+      {unavailable && <div className="scene-loading" role="alert"><TreeDeciduous size={32} /><p>WebGL isn’t available in this browser.</p><small>Enable hardware acceleration or try another browser to explore this landscape.</small></div>}
       {contextLost && <div className="scene-loading" role="alert"><p>The 3D connection was interrupted.</p><Button onClick={() => window.location.reload()}>Reload landscape</Button></div>}
     </SceneBoundary>
     <header className="landscape-header"><div className="landscape-brand"><TreeDeciduous strokeWidth={1.4} /><h1>Living Landscape <span>3D</span></h1></div><p>A moment in the mountains.</p></header>
