@@ -2,9 +2,10 @@ import { useEffect, useMemo, useRef } from 'react';
 import { Environment, Lightformer } from '@react-three/drei';
 import { useFrame } from '@react-three/fiber';
 import * as THREE from 'three';
+import { Player, FollowCamera, type GameState, type CharacterKind } from './Explorer';
 import { heightAt, makeGrassTexture, makeMountains, makeTerrain, makeTree, seededRandom } from '@/lib/landscape-geometry';
 
-export type LandscapePalette = Record<'sky' | 'mist' | 'grass' | 'grassLight' | 'forest' | 'mountain' | 'leaf' | 'leafLight' | 'bark' | 'sun', THREE.Color>;
+export type LandscapePalette = Record<'sky' | 'mist' | 'grass' | 'grassLight' | 'forest' | 'mountain' | 'leaf' | 'leafLight' | 'bark' | 'sun' | 'toySkin' | 'toyShirt' | 'toyPants' | 'toyHat' | 'bird' | 'birdWing', THREE.Color>;
 
 function Tree({ palette }: { palette: LandscapePalette }) {
   const tree = useMemo(makeTree, []);
@@ -84,7 +85,7 @@ function Atmosphere({ palette }: { palette: LandscapePalette }) {
   </>;
 }
 
-export function LandscapeScene({ palette, onReady }: { palette: LandscapePalette; onReady: () => void }) {
+export function LandscapeScene({ palette, onReady, game, kind, follow }: { palette: LandscapePalette; onReady: () => void; game: GameState; kind: CharacterKind; follow: boolean }) {
   const terrain = useMemo(() => makeTerrain(palette.grass, palette.grassLight, palette.forest), [palette]);
   const texture = useMemo(makeGrassTexture, []);
   const mountains = useMemo(() => [makeMountains(155, 49, 11), makeMountains(225, 67, 88), makeMountains(295, 88, 65)], []);
@@ -99,5 +100,7 @@ export function LandscapeScene({ palette, onReady }: { palette: LandscapePalette
     </mesh>)}
     <Forest palette={palette} />
     <Tree palette={palette} />
+    <Player game={game} kind={kind} palette={palette} />
+    {follow && <FollowCamera game={game} />}
   </>;
 }
