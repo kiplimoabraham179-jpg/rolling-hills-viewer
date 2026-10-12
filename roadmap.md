@@ -1,0 +1,3 @@
+- [ ] Create procedural terrain, dimensional tree, forest, mountain ridges, and sunlight.
+- [ ] Add camera controls, accessible toolbar, loading and WebGL recovery.
+- [ ] Verify scene and interactions on desktop and mobile.
