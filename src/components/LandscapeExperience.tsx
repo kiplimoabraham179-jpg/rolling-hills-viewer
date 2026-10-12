@@ -11,9 +11,9 @@ const INITIAL_POSITION: [number, number, number] = [27, 21, 48];
 const INITIAL_TARGET: [number, number, number] = [0, 17, 0];
 
 class SceneBoundary extends Component<{ children: ReactNode }, { failed: boolean }> {
-  state = { failed: false };
+  override state = { failed: false };
   static getDerivedStateFromError() { return { failed: true }; }
-  render() {
+  override render() {
     return this.state.failed ? <div className="scene-loading" role="alert"><TreeDeciduous size={32} /><p>The landscape couldn’t open.</p><small>Your browser needs WebGL to display this scene. Try enabling hardware acceleration or using another browser.</small><Button variant="secondary" onClick={() => window.location.reload()}>Try again</Button></div> : this.props.children;
   }
 }
@@ -38,7 +38,7 @@ export default function LandscapeExperience() {
       if (!ctx) throw new Error('Color conversion unavailable');
       ctx.fillStyle = css.getPropertyValue(`--scene-${name}`).trim(); ctx.fillRect(0, 0, 1, 1);
       const pixel = ctx.getImageData(0, 0, 1, 1).data;
-      return [key, new THREE.Color().setRGB(pixel[0] / 255, pixel[1] / 255, pixel[2] / 255, THREE.SRGBColorSpace)];
+      return [key, new THREE.Color().setRGB((pixel[0] ?? 0) / 255, (pixel[1] ?? 0) / 255, (pixel[2] ?? 0) / 255, THREE.SRGBColorSpace)];
     });
     setPalette(Object.fromEntries(entries) as LandscapePalette);
     const updateFullscreen = () => setFullscreen(Boolean(document.fullscreenElement));

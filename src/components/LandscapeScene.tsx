@@ -60,7 +60,7 @@ function Forest({ palette }: { palette: LandscapePalette }) {
 function Atmosphere({ palette }: { palette: LandscapePalette }) {
   const sky = useMemo(() => {
     const geo = new THREE.SphereGeometry(650, 32, 16);
-    const p = geo.attributes.position, colors: number[] = [];
+    const p = geo.getAttribute('position'), colors: number[] = [];
     for (let i = 0; i < p.count; i++) {
       const blend = THREE.MathUtils.smoothstep(p.getY(i) / 650, -.05, .65);
       palette.mist.clone().lerp(palette.sky, blend).toArray(colors, i * 3);

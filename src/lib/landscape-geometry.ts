@@ -18,7 +18,7 @@ export function heightAt(x: number, z: number) {
 export function makeTerrain(grass: THREE.Color, light: THREE.Color, forest: THREE.Color) {
   const geometry = new THREE.PlaneGeometry(300, 300, 150, 150);
   geometry.rotateX(-Math.PI / 2);
-  const positions = geometry.attributes.position;
+  const positions = geometry.getAttribute('position');
   const colors = new Float32Array(positions.count * 3);
   const color = new THREE.Color();
   for (let i = 0; i < positions.count; i++) {
@@ -38,14 +38,14 @@ export function makeMountains(radius: number, height: number, seed: number) {
   const random = seededRandom(seed);
   const segments = 160, rows = 9;
   const peaks = Array.from({ length: segments + 1 }, (_, i) => height * (.68 + .18 * Math.sin(i * .3) + .13 * Math.sin(i * .93) + random() * .16));
-  peaks[segments] = peaks[0];
+  peaks[segments] = peaks[0] ?? height;
   const vertices: number[] = [], indices: number[] = [];
   for (let row = 0; row <= rows; row++) {
     const t = row / rows;
     for (let i = 0; i <= segments; i++) {
       const a = i / segments * Math.PI * 2;
       const r = radius + (t - .5) * 65;
-      const y = -13 + peaks[i] * Math.sin(t * Math.PI) ** .85 + 2 * Math.sin(a * 17 + t * 12) * Math.sin(t * Math.PI);
+      const y = -13 + (peaks[i] ?? height) * Math.sin(t * Math.PI) ** .85 + 2 * Math.sin(a * 17 + t * 12) * Math.sin(t * Math.PI);
       vertices.push(Math.sin(a) * r, y, Math.cos(a) * r);
       if (row < rows && i < segments) {
         const v = row * (segments + 1) + i;
