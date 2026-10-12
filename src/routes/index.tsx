@@ -1,24 +1,20 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { ClientOnly, createFileRoute } from '@tanstack/react-router';
+import { lazy, Suspense } from 'react';
 
-// No head() here: the home route inherits title/description/og/twitter from
-// __root.tsx, and ships no og:image so serve-time hosting can inject the
-// project's social preview (explicit og:image or latest screenshot).
-export const Route = createFileRoute("/")({
+const LandscapeExperience = lazy(() => import('@/components/LandscapeExperience'));
+export const Route = createFileRoute('/')({
+  head: () => ({ meta: [
+    { title: 'Living Landscape 3D — The Golden Canopy' },
+    { name: 'description', content: 'Explore a living 3D landscape: a golden-green tree, sunlit rolling hills, forested valleys and misty blue mountains.' },
+    { property: 'og:title', content: 'Living Landscape 3D — The Golden Canopy' },
+    { property: 'og:description', content: 'An interactive mountain landscape, rendered in real time. Orbit, zoom, and discover a quieter perspective.' },
+    { property: 'og:type', content: 'website' },
+    { name: 'twitter:card', content: 'summary_large_image' },
+  ] }),
   component: Index,
 });
 
-// IMPORTANT: Replace this placeholder. See ./README.md for routing conventions.
 function Index() {
-  return (
-    <div
-      className="flex min-h-screen items-center justify-center"
-      style={{ backgroundColor: "#fcfbf8" }}
-    >
-      <img
-        data-lovable-blank-page-placeholder="REMOVE_THIS"
-        src="https://cdn.gpteng.co/blank-app-v1.svg"
-        alt="Your app will live here!"
-      />
-    </div>
-  );
+  const fallback = <div className="scene-loading" role="status"><p>Preparing your landscape…</p></div>;
+  return <ClientOnly fallback={fallback}><Suspense fallback={fallback}><LandscapeExperience /></Suspense></ClientOnly>;
 }

@@ -63,25 +63,38 @@
 
 :root {
   --radius: 0.625rem;
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.129 0.042 264.695);
+  --background: oklch(0.2 0.02 170);
+  --foreground: oklch(0.97 0.008 110);
   --card: oklch(1 0 0);
   --card-foreground: oklch(0.129 0.042 264.695);
   --popover: oklch(1 0 0);
   --popover-foreground: oklch(0.129 0.042 264.695);
-  --primary: oklch(0.208 0.042 265.755);
-  --primary-foreground: oklch(0.984 0.003 247.858);
+  --primary: oklch(0.85 0.17 120);
+  --primary-foreground: oklch(0.2 0.02 170);
   --secondary: oklch(0.968 0.007 247.896);
   --secondary-foreground: oklch(0.208 0.042 265.755);
   --muted: oklch(0.968 0.007 247.896);
   --muted-foreground: oklch(0.554 0.046 257.417);
-  --accent: oklch(0.968 0.007 247.896);
-  --accent-foreground: oklch(0.208 0.042 265.755);
+  --accent: oklch(0.97 0.008 110 / 12%);
+  --accent-foreground: oklch(0.97 0.008 110);
   --destructive: oklch(0.577 0.245 27.325);
   --destructive-foreground: oklch(0.984 0.003 247.858);
   --border: oklch(0.929 0.013 255.508);
   --input: oklch(0.929 0.013 255.508);
-  --ring: oklch(0.704 0.04 256.788);
+  --ring: oklch(0.85 0.17 120);
+  --scene-sky: oklch(0.53 0.16 253);
+  --scene-mist: oklch(0.76 0.075 242);
+  --scene-grass: oklch(0.57 0.15 126);
+  --scene-grass-light: oklch(0.7 0.17 121);
+  --scene-forest: oklch(0.31 0.065 155);
+  --scene-mountain: oklch(0.48 0.065 237);
+  --scene-leaf: oklch(0.78 0.2 117);
+  --scene-leaf-light: oklch(0.89 0.19 109);
+  --scene-bark: oklch(0.29 0.026 64);
+  --scene-sun: oklch(0.96 0.045 90);
+  --overlay: oklch(0.18 0.018 170 / 68%);
+  --overlay-border: oklch(0.97 0.008 110 / 18%);
+  --overlay-shadow: 0 8px 36px oklch(0.1 0.01 170 / 22%);
   --chart-1: oklch(0.646 0.222 41.116);
   --chart-2: oklch(0.6 0.118 184.704);
   --chart-3: oklch(0.398 0.07 227.392);
@@ -140,5 +153,40 @@
   body {
     background-color: var(--color-background);
     color: var(--color-foreground);
+    font-family: "DM Sans", sans-serif;
+    letter-spacing: 0;
   }
+}
+
+.landscape-app { position: fixed; inset: 0; overflow: hidden; }
+.landscape-canvas { position: absolute; inset: 0; touch-action: none; }
+.landscape-header { position: absolute; top: 36px; left: 42px; pointer-events: none; text-shadow: 0 2px 18px var(--background); }
+.landscape-brand { display: flex; align-items: center; gap: 12px; }
+.landscape-brand svg { width: 27px; height: 27px; }
+.landscape-brand h1 { font-size: 22px; font-weight: 500; margin: 0; }
+.landscape-brand h1 span { font-size: 11px; margin-left: 9px; opacity: .6; vertical-align: middle; }
+.landscape-header p { margin: 9px 0 0 39px; font-size: 12px; opacity: .75; }
+.scene-status { position: absolute; right: 42px; top: 43px; display: flex; gap: 8px; align-items: center; font-size: 10px; letter-spacing: 0; text-transform: uppercase; }
+.status-dot { width: 5px; height: 5px; background: var(--primary); border-radius: 50%; }
+.landscape-bottom { position: absolute; bottom: 30px; left: 0; right: 0; display: flex; flex-direction: column; align-items: center; gap: 17px; pointer-events: none; }
+.landscape-toolbar { display: flex; align-items: center; gap: 6px; padding: 8px; border: 1px solid var(--overlay-border); background: var(--overlay); backdrop-filter: blur(20px); border-radius: 8px; box-shadow: var(--overlay-shadow); pointer-events: auto; }
+.toolbar-divider { height: 22px; width: 1px; background: var(--overlay-border); margin: 0 5px; }
+.landscape-toolbar .tool-active { background: var(--accent); color: var(--primary); }
+.landscape-instructions { margin: 0; font-size: 11px; opacity: .78; text-shadow: 0 1px 8px var(--background); }
+.landscape-caption { position: absolute; bottom: 39px; left: 42px; pointer-events: none; }
+.landscape-caption p { margin: 0 0 6px; font-size: 10px; opacity: .6; }
+.landscape-caption h2 { font-size: 14px; font-weight: 400; margin: 0; }
+.scene-loading { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 20px; background: var(--background); z-index: 20; }
+.scene-loading svg { color: var(--primary); }
+.scene-loading p { font-size: 14px; }
+.scene-loading small { max-width: 300px; text-align: center; opacity: .7; }
+@media (max-width: 640px) {
+  .landscape-header { top: 25px; left: 22px; }
+  .landscape-brand h1 { font-size: 18px; }
+  .scene-status { top: 91px; left: 61px; right: auto; }
+  .landscape-caption { display: none; }
+  .landscape-bottom { bottom: 24px; gap: 15px; }
+  .landscape-toolbar { gap: 2px; padding: 6px; }
+  .landscape-toolbar .toolbar-label { display: none; }
+  .landscape-instructions { font-size: 10px; }
 }
