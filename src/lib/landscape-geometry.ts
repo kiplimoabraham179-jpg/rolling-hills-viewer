@@ -8,12 +8,26 @@ export function seededRandom(seed = 42) {
   };
 }
 
+function vnoise(x: number, z: number) {
+  const xi = Math.floor(x), zi = Math.floor(z), xf = x - xi, zf = z - zi;
+  const h = (a: number, b: number) => { const s = Math.sin(a * 127.1 + b * 311.7) * 43758.5453; return s - Math.floor(s); };
+  const u = xf * xf * (3 - 2 * xf), v = zf * zf * (3 - 2 * zf);
+  const a = h(xi, zi), b = h(xi + 1, zi), c = h(xi, zi + 1), d = h(xi + 1, zi + 1);
+  return a + (b - a) * u + (c - a) * v + (a - b - c + d) * u * v;
+}
+
+/** Infinite, deterministic ground height (used by streamed chunks and collision). */
 export function heightAt(x: number, z: number) {
   const hill = 8 * Math.exp(-(x * x / 850 + z * z / 1000));
   const rolls = 3.2 * Math.sin(x * .047 + .4) * Math.cos(z * .052) + 1.2 * Math.sin(z * .11 + x * .025);
   const valley = -9 * Math.exp(-((z + 42) ** 2 / 450)) * Math.exp(-(x * x / 900));
   const slopes = 20 * Math.exp(-((Math.abs(x) - 67) ** 2 / 800 + (z + 48) ** 2 / 3000));
-  return hill + rolls + valley + slopes - 3;
+  // far terrain: broad hills and walkable mountain ranges that rise with distance
+  const far = THREE.MathUtils.smoothstep(Math.hypot(x, z), 70, 260);
+  const hills = 14 * vnoise(x / 90, z / 90) + 6 * vnoise(x / 37 + 9, z / 37 - 4);
+  const ridge = 1 - Math.abs(vnoise(x / 160 - 3, z / 160 + 7) * 2 - 1);
+  const mountains = 55 * ridge ** 2.2 * vnoise(x / 300 + 1, z / 300 + 2);
+  return hill + rolls + valley + slopes - 3 + far * (hills + mountains - 8);
 }
 
 export function makeTerrain(grass: THREE.Color, light: THREE.Color, forest: THREE.Color) {

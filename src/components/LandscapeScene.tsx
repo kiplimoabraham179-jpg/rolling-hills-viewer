@@ -1,9 +1,10 @@
-import { useEffect, useMemo, useRef } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Environment, Lightformer } from '@react-three/drei';
 import { useFrame } from '@react-three/fiber';
 import * as THREE from 'three';
 import { Player, FollowCamera, type GameState, type CharacterKind } from './Explorer';
-import { heightAt, makeGrassTexture, makeMountains, makeTerrain, makeTree, seededRandom } from '@/lib/landscape-geometry';
+import { heightAt, makeGrassTexture, makeMountains, makeTree } from '@/lib/landscape-geometry';
+import { CHUNK_RADIUS, CHUNK_SIZE, makeChunk } from '@/lib/world-chunks';
 
 export type LandscapePalette = Record<'sky' | 'mist' | 'grass' | 'grassLight' | 'forest' | 'mountain' | 'leaf' | 'leafLight' | 'bark' | 'sun' | 'toySkin' | 'toyShirt' | 'toyPants' | 'toyHat' | 'bird' | 'birdWing', THREE.Color>;
 
@@ -33,32 +34,57 @@ function Tree({ palette }: { palette: LandscapePalette }) {
   </group>;
 }
 
-function Forest({ palette }: { palette: LandscapePalette }) {
-  const meshRef = useRef<THREE.InstancedMesh>(null);
-  useEffect(() => {
-    const mesh = meshRef.current;
-    if (!mesh) return;
-    const random = seededRandom(6), dummy = new THREE.Object3D();
-    for (let i = 0; i < 3600; i++) {
-      const angle = random() * Math.PI * 2, radius = 35 + random() * 95;
-      const x = Math.cos(angle) * radius, z = Math.sin(angle) * radius;
-      const h = 1.8 + random() * 3.4;
-      dummy.position.set(x, heightAt(x, z) + h * .5, z);
-      dummy.scale.set(.8 + random() * .9, h, .8 + random() * .9);
-      dummy.rotation.set(0, random() * Math.PI, 0); dummy.updateMatrix();
-      mesh.setMatrixAt(i, dummy.matrix);
-      mesh.setColorAt(i, palette.forest.clone().lerp(palette.grass, random() * .22));
+type Chunk = { key: string; terrain: THREE.BufferGeometry; deco: THREE.BufferGeometry | null };
+
+/** Streams deterministic terrain chunks around the player and recycles far ones. */
+function ChunkWorld({ palette, game, texture }: { palette: LandscapePalette; game: GameState; texture: THREE.Texture }) {
+  const cache = useRef(new Map<string, Chunk>());
+  const [chunks, setChunks] = useState<Chunk[]>([]);
+  const center = useRef('');
+  useFrame(() => {
+    const cx = Math.round(game.pos.x / CHUNK_SIZE), cz = Math.round(game.pos.z / CHUNK_SIZE);
+    const wanted: [number, number][] = [];
+    for (let x = -CHUNK_RADIUS; x <= CHUNK_RADIUS; x++) for (let z = -CHUNK_RADIUS; z <= CHUNK_RADIUS; z++) wanted.push([cx + x, cz + z]);
+    wanted.sort((a, b) => Math.hypot(a[0] - cx, a[1] - cz) - Math.hypot(b[0] - cx, b[1] - cz));
+    const map = cache.current;
+    // build at most 2 missing chunks per frame (nearest first) to avoid hitches
+    let built = 0;
+    for (const [x, z] of wanted) {
+      const key = `${x},${z}`;
+      if (map.has(key) || built >= 2) continue;
+      map.set(key, { key, ...makeChunk(x, z, palette) }); built++;
     }
-    mesh.instanceMatrix.needsUpdate = true;
-    if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
-    mesh.computeBoundingSphere();
-  }, [palette]);
-  return <instancedMesh ref={meshRef} args={[undefined, undefined, 3600]}>
-    <coneGeometry args={[1, 1, 5]} /><meshStandardMaterial roughness={1} />
-  </instancedMesh>;
+    const keys = new Set(wanted.map(([x, z]) => `${x},${z}`));
+    let removed = false;
+    for (const [key, c] of map) if (!keys.has(key)) {
+      const [x, z] = key.split(',').map(Number);
+      if (Math.max(Math.abs(x! - cx), Math.abs(z! - cz)) > CHUNK_RADIUS + 1) { c.terrain.dispose(); c.deco?.dispose(); map.delete(key); removed = true; }
+    }
+    const sig = `${cx},${cz},${map.size}`;
+    if (built || removed || sig !== center.current) { center.current = sig; setChunks([...map.values()]); }
+  });
+  useEffect(() => () => { cache.current.forEach(c => { c.terrain.dispose(); c.deco?.dispose(); }); cache.current.clear(); }, [palette]);
+  return <>{chunks.map(c => <group key={c.key}>
+    <mesh geometry={c.terrain} receiveShadow><meshStandardMaterial vertexColors map={texture} roughness={1} bumpMap={texture} bumpScale={.12} /></mesh>
+    {c.deco && <mesh geometry={c.deco} castShadow receiveShadow><meshStandardMaterial vertexColors roughness={.95} flatShading /></mesh>}
+  </group>)}</>;
 }
 
-function Atmosphere({ palette }: { palette: LandscapePalette }) {
+/** Keeps sky, sun shadows and horizon ranges centred on the player. */
+function FollowWorld({ game, children, sun }: { game: GameState; children: React.ReactNode; sun: React.RefObject<THREE.DirectionalLight | null> }) {
+  const g = useRef<THREE.Group>(null);
+  useFrame(() => {
+    g.current?.position.set(game.pos.x, 0, game.pos.z);
+    const l = sun.current;
+    if (l) { l.position.set(game.pos.x - 45, game.pos.y + 32, game.pos.z + 35); l.target.position.set(game.pos.x, game.pos.y, game.pos.z); l.target.updateMatrixWorld(); }
+  });
+  return <group ref={g}>{children}</group>;
+}
+
+function Atmosphere({ palette, game }: { palette: LandscapePalette; game: GameState }) {
+  const sun = useRef<THREE.DirectionalLight>(null);
+  const mountains = useMemo(() => [makeMountains(430, 70, 11), makeMountains(520, 95, 88), makeMountains(610, 120, 65)], []);
+  useEffect(() => () => mountains.forEach(m => m.dispose()), [mountains]);
   const sky = useMemo(() => {
     const geo = new THREE.SphereGeometry(650, 32, 16);
     const p = geo.getAttribute('position'), colors: number[] = [];
@@ -71,10 +97,15 @@ function Atmosphere({ palette }: { palette: LandscapePalette }) {
   }, [palette]);
   useEffect(() => () => sky.dispose(), [sky]);
   return <>
-    <mesh geometry={sky}><meshBasicMaterial vertexColors side={THREE.BackSide} fog={false} depthWrite={false} /></mesh>
-    <fog attach="fog" args={[palette.mist, 65, 330]} />
+    <FollowWorld game={game} sun={sun}>
+      <mesh geometry={sky}><meshBasicMaterial vertexColors side={THREE.BackSide} fog={false} depthWrite={false} /></mesh>
+      {mountains.map((geometry, i) => <mesh key={i} geometry={geometry}>
+        <meshBasicMaterial color={palette.mountain.clone().lerp(palette.mist, .35 + i * .15)} fog={false} side={THREE.DoubleSide} />
+      </mesh>)}
+    </FollowWorld>
+    <fog attach="fog" args={[palette.mist, 110, 300]} />
     <hemisphereLight args={[palette.mist, palette.forest, .9]} />
-    <directionalLight color={palette.sun} position={[-45, 32, 35]} intensity={2.7} castShadow
+    <directionalLight ref={sun} color={palette.sun} position={[-45, 32, 35]} intensity={2.7} castShadow
       shadow-mapSize={[2048, 2048]} shadow-camera-left={-25} shadow-camera-right={25}
       shadow-camera-top={25} shadow-camera-bottom={-25} shadow-camera-near={1} shadow-camera-far={130}
       shadow-bias={-.0003} shadow-normalBias={.035} />
@@ -86,19 +117,13 @@ function Atmosphere({ palette }: { palette: LandscapePalette }) {
 }
 
 export function LandscapeScene({ palette, onReady, game, kind, follow }: { palette: LandscapePalette; onReady: () => void; game: GameState; kind: CharacterKind; follow: boolean }) {
-  const terrain = useMemo(() => makeTerrain(palette.grass, palette.grassLight, palette.forest), [palette]);
-  const texture = useMemo(makeGrassTexture, []);
-  const mountains = useMemo(() => [makeMountains(155, 49, 11), makeMountains(225, 67, 88), makeMountains(295, 88, 65)], []);
+  const texture = useMemo(() => { const t = makeGrassTexture(); t.repeat.set(32, 32); return t; }, []);
   const ready = useRef(false);
   useFrame(() => { if (!ready.current) { ready.current = true; onReady(); } });
-  useEffect(() => () => { terrain.dispose(); texture.dispose(); mountains.forEach(g => g.dispose()); }, [terrain, texture, mountains]);
+  useEffect(() => () => texture.dispose(), [texture]);
   return <>
-    <Atmosphere palette={palette} />
-    <mesh geometry={terrain} receiveShadow><meshStandardMaterial vertexColors map={texture} roughness={1} bumpMap={texture} bumpScale={.12} /></mesh>
-    {mountains.map((geometry, i) => <mesh key={i} geometry={geometry}>
-      <meshStandardMaterial color={palette.mountain.clone().lerp(palette.mist, i * .18)} roughness={1} side={THREE.DoubleSide} />
-    </mesh>)}
-    <Forest palette={palette} />
+    <Atmosphere palette={palette} game={game} />
+    <ChunkWorld palette={palette} game={game} texture={texture} />
     <Tree palette={palette} />
     <Player game={game} kind={kind} palette={palette} />
     {follow && <FollowCamera game={game} />}
