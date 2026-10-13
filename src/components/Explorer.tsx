@@ -13,7 +13,7 @@ export type GameState = {
 
 // Feel constants
 const WALK = 6, RUN = 11, FLY = 13, FLY_BOOST = 22, ACCEL = 9, GRAVITY = 26, JUMP = 9.5, CLIMB = 9;
-const WORLD_RADIUS = 112, TURN = 12;
+const TURN = 12;
 export const SPAWN = new THREE.Vector3(7, 0, 14);
 
 export function createGame(): GameState {
@@ -62,9 +62,8 @@ export function Player({ game, kind, palette }: { game: GameState; kind: Charact
       g.vel.y -= GRAVITY * dt;
     }
     g.pos.addScaledVector(g.vel, dt);
-    // world boundary
-    const r = Math.hypot(g.pos.x, g.pos.z);
-    if (r > WORLD_RADIUS) { g.pos.x *= WORLD_RADIUS / r; g.pos.z *= WORLD_RADIUS / r; }
+    // open world: terrain is streamed in chunks, no hard boundary
+    if (!Number.isFinite(g.pos.x) || !Number.isFinite(g.pos.z)) g.pos.copy(SPAWN);
     // tree trunk collision
     const tr = Math.hypot(g.pos.x, g.pos.z), floor = heightAt(g.pos.x, g.pos.z);
     if (tr < 1.3 && g.pos.y < floor + 6) { const f = 1.3 / Math.max(tr, .001); g.pos.x *= f; g.pos.z *= f; }
