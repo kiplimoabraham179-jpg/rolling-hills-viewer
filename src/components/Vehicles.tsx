@@ -16,8 +16,10 @@ export const say = (g: GameState, text: string, secs = 3) => { g.message = text;
 /** Enter the nearest vehicle, or exit the current one. */
 export function toggleVehicle(g: GameState) {
   if (g.mode === 'vehicle') {
-    const v = g.vehicles[g.vid]; g.mode = 'foot'; g.vid = -1;
-    if (v) { g.pos.set(v.pos.x - Math.cos(v.yaw) * 2.4, v.pos.y, v.pos.z + Math.sin(v.yaw) * 2.4); v.speed = Math.min(v.speed, 0); v.throttle = 0; if (v.type === 'car') v.speed = 0; }
+    const v = g.vehicles[g.vid];
+    if (v && v.type === 'plane' && v.pos.y > Math.max(heightAt(v.pos.x, v.pos.z), SEA_LEVEL) + 3) { say(g, 'Land the plane before getting out'); return; }
+    g.mode = 'foot'; g.vid = -1;
+    if (v) { g.pos.set(v.pos.x - Math.cos(v.yaw) * 2.4, v.pos.y, v.pos.z + Math.sin(v.yaw) * 2.4); v.speed = 0; v.throttle = 0; v.vy = 0; }
     g.vel.set(0, 0, 0); return;
   }
   const near = nearestVehicle(g);
