@@ -6,6 +6,8 @@ import * as THREE from 'three';
 import { Expand, Minimize, Minus, Plus, RotateCcw, Orbit, TreeDeciduous, LoaderCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { createGame, respawn, type CharacterKind } from './Explorer';
+import { MapHud } from './MapHud';
+import { toggleVehicle } from './Vehicles';
 import { LandscapeScene, type LandscapePalette } from './LandscapeScene';
 
 const INITIAL_POSITION: [number, number, number] = [0, 22, 49];
@@ -32,11 +34,12 @@ export default function LandscapeExperience() {
   const game = useRef(createGame()).current;
   const [kind, setKind] = useState<CharacterKind>('toy');
   const [follow, setFollow] = useState(true);
+  const kindRef = useRef(kind); kindRef.current = kind;
   const [touch, setTouch] = useState(false);
   const knob = useRef<HTMLDivElement>(null);
   useEffect(() => {
     setTouch(window.matchMedia('(pointer: coarse)').matches);
-    const kd = (e: KeyboardEvent) => { if (['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.code)) { e.preventDefault(); (document.activeElement as HTMLElement | null)?.blur?.(); } game.keys.add(e.code); };
+    const kd = (e: KeyboardEvent) => { if (['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.code)) { e.preventDefault(); (document.activeElement as HTMLElement | null)?.blur?.(); } if (e.code === 'KeyF' && !e.repeat && kindRef.current === 'toy') toggleVehicle(game); game.keys.add(e.code); };
     const ku = (e: KeyboardEvent) => game.keys.delete(e.code);
     const clear = () => game.keys.clear();
     window.addEventListener('keydown', kd); window.addEventListener('keyup', ku); window.addEventListener('blur', clear);
@@ -54,7 +57,7 @@ export default function LandscapeExperience() {
 
   useEffect(() => {
     const css = getComputedStyle(document.documentElement);
-    const names = { sky: 'sky', mist: 'mist', grass: 'grass', grassLight: 'grass-light', forest: 'forest', mountain: 'mountain', leaf: 'leaf', leafLight: 'leaf-light', bark: 'bark', sun: 'sun', toySkin: 'toy-skin', toyShirt: 'toy-shirt', toyPants: 'toy-pants', toyHat: 'toy-hat', bird: 'bird', birdWing: 'bird-wing' };
+    const names = { sky: 'sky', mist: 'mist', grass: 'grass', grassLight: 'grass-light', forest: 'forest', mountain: 'mountain', leaf: 'leaf', leafLight: 'leaf-light', bark: 'bark', sun: 'sun', toySkin: 'toy-skin', toyShirt: 'toy-shirt', toyPants: 'toy-pants', toyHat: 'toy-hat', bird: 'bird', birdWing: 'bird-wing', sand: 'sand', water: 'water', road: 'road', car: 'car', plane: 'plane', fuel: 'fuel', gold: 'gold' };
     const entries = Object.entries(names).map(([key, name]) => {
       // Browsers resolve OKLCH to sRGB through canvas; Three.js receives linear color.
       const canvas = document.createElement('canvas'); canvas.width = canvas.height = 1;
@@ -117,7 +120,7 @@ export default function LandscapeExperience() {
       {contextLost && <div className="scene-loading" role="alert"><p>The 3D connection was interrupted.</p><Button onClick={() => window.location.reload()}>Reload landscape</Button></div>}
     </SceneBoundary>
     <header className="landscape-header"><div className="landscape-brand"><TreeDeciduous strokeWidth={1.4} /><h1>Living Landscape <span>3D</span></h1></div><p>A moment in the mountains.</p></header>
-    <div className="scene-status"><span className="status-dot" />{ready ? 'Live landscape' : 'Preparing scene'}</div>
+    <MapHud game={game} />
     <div className="game-hud" aria-label="Game controls">
       <div className="row" role="group" aria-label="Character">
         <Button size="sm" variant={kind === 'toy' ? 'default' : 'secondary'} aria-pressed={kind === 'toy'} onClick={() => switchKind('toy')}>Toy explorer</Button>
@@ -127,12 +130,13 @@ export default function LandscapeExperience() {
         <Button size="sm" variant="secondary" onClick={() => respawn(game, kind)}>Respawn</Button>
         <Button size="sm" variant="secondary" aria-pressed={!follow} onClick={() => setFollow(f => !f)}>{follow ? 'Free camera' : 'Follow camera'}</Button>
       </div>
-      <p className="hint">WASD / arrows move · Shift run · {kind === 'bird' ? 'Space/E up · Q/C down' : 'Space jump'} · drag to orbit camera</p>
+      <p className="hint">WASD / arrows move · Shift run · {kind === 'bird' ? 'Space/E up · Q/C down' : 'Space jump'} · F enter/exit car or plane · drag to orbit</p>
     </div>
     {touch && <><div className="joystick" aria-label="Movement joystick" onPointerDown={e => { e.currentTarget.setPointerCapture(e.pointerId); joy(e); }} onPointerMove={e => { if (e.buttons || e.pressure) joy(e); }} onPointerUp={e => joy(e, true)} onPointerCancel={e => joy(e, true)}><div className="joystick-knob" ref={knob} /></div>
       <div className="touch-buttons">
         <Button aria-label={kind === 'bird' ? 'Fly up' : 'Jump'} onPointerDown={() => { game.jumpHeld = true; }} onPointerUp={() => { game.jumpHeld = false; }} onPointerLeave={() => { game.jumpHeld = false; }}>{kind === 'bird' ? 'Up' : 'Jump'}</Button>
-        {kind === 'bird' && <Button variant="secondary" aria-label="Fly down" onPointerDown={() => { game.downHeld = true; }} onPointerUp={() => { game.downHeld = false; }} onPointerLeave={() => { game.downHeld = false; }}>Down</Button>}
+        {kind === 'toy' && <Button variant="secondary" aria-label="Enter or exit vehicle" onClick={() => toggleVehicle(game)}>F</Button>}
+        {<Button variant="secondary" aria-label="Down" onPointerDown={() => { game.downHeld = true; }} onPointerUp={() => { game.downHeld = false; }} onPointerLeave={() => { game.downHeld = false; }}>Down</Button>}
       </div></>}
     <div className="landscape-caption"><p>01 / THE GOLDEN CANOPY</p><h2>Somewhere, a little closer to nature.</h2></div>
     <div className="landscape-bottom">
