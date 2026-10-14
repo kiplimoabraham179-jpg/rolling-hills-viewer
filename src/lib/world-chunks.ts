@@ -1,13 +1,15 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { heightAt, seededRandom } from './landscape-geometry';
+import { SEA_LEVEL, roadDist } from './game-world';
 
 /** Pure, deterministic chunk generation for the streamed open world. */
 export const CHUNK_SIZE = 80;
 export const CHUNK_SEGMENTS = 32;
+const ROAD_CLEAR = 5;
 export const CHUNK_RADIUS = 2; // chunks loaded in each direction around the player
 
-export type ChunkColors = Record<'grass' | 'grassLight' | 'forest' | 'mountain' | 'mist' | 'bark' | 'leafLight' | 'sun', THREE.Color>;
+export type ChunkColors = Record<'grass' | 'grassLight' | 'forest' | 'mountain' | 'mist' | 'bark' | 'leafLight' | 'sun' | 'sand', THREE.Color>;
 
 const hash = (x: number, z: number) => {
   let h = (x * 374761393 + z * 668265263) | 0;
@@ -26,6 +28,7 @@ function colorAt(x: number, z: number, y: number, c: ChunkColors, out: THREE.Col
   out.copy(c.grass).lerp(c.grassLight, .22 + .18 * Math.sin(x * .13 + z * .05));
   out.lerp(c.forest, forestAt(x, z) * .75);
   out.lerp(c.mountain, THREE.MathUtils.smoothstep(y, 26, 48) * .85);
+  out.lerp(c.sand, 1 - THREE.MathUtils.smoothstep(y, SEA_LEVEL + .8, SEA_LEVEL + 3));
   return out;
 }
 
@@ -65,7 +68,7 @@ export function makeChunk(cx: number, cz: number, colors: ChunkColors) {
   for (let i = 0; i < 260; i++) {
     const x = ox + (random() - .5) * CHUNK_SIZE, z = oz + (random() - .5) * CHUNK_SIZE;
     const r = random(), y = heightAt(x, z), f = forestAt(x, z), d = Math.hypot(x, z);
-    if (d < 14) continue; // keep the golden tree's hill clear
+    if (d < 14 || y < SEA_LEVEL + 1 || roadDist(x, z) < ROAD_CLEAR) continue; // keep the golden tree's hill clear
     if (y < 40 && r < f * .75) {
       const h = 2 + random() * 3.6, w = .8 + random() * .8;
       add(new THREE.ConeGeometry(1, 1, 5), colors.forest.clone().lerp(colors.grass, random() * .25), x, y + h * .5, z, w, h, w, random() * 6);

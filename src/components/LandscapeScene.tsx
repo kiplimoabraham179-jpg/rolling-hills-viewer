@@ -4,9 +4,11 @@ import { useFrame } from '@react-three/fiber';
 import * as THREE from 'three';
 import { Player, FollowCamera, type GameState, type CharacterKind } from './Explorer';
 import { heightAt, makeGrassTexture, makeMountains, makeTree } from '@/lib/landscape-geometry';
+import { Vehicles } from './Vehicles';
+import { WorldFeatures } from './WorldFeatures';
 import { CHUNK_RADIUS, CHUNK_SIZE, makeChunk } from '@/lib/world-chunks';
 
-export type LandscapePalette = Record<'sky' | 'mist' | 'grass' | 'grassLight' | 'forest' | 'mountain' | 'leaf' | 'leafLight' | 'bark' | 'sun' | 'toySkin' | 'toyShirt' | 'toyPants' | 'toyHat' | 'bird' | 'birdWing', THREE.Color>;
+export type LandscapePalette = Record<'sky' | 'mist' | 'grass' | 'grassLight' | 'forest' | 'mountain' | 'leaf' | 'leafLight' | 'bark' | 'sun' | 'toySkin' | 'toyShirt' | 'toyPants' | 'toyHat' | 'bird' | 'birdWing' | 'sand' | 'water' | 'road' | 'car' | 'plane' | 'fuel' | 'gold', THREE.Color>;
 
 function Tree({ palette }: { palette: LandscapePalette }) {
   const tree = useMemo(makeTree, []);
@@ -125,6 +127,8 @@ export function LandscapeScene({ palette, onReady, game, kind, follow }: { palet
     <Atmosphere palette={palette} game={game} />
     <ChunkWorld palette={palette} game={game} texture={texture} />
     <Tree palette={palette} />
+    <WorldFeatures game={game} palette={palette} />
+    <Vehicles game={game} palette={palette} />
     <Player game={game} kind={kind} palette={palette} />
     {follow && <FollowCamera game={game} />}
   </>;

@@ -3,12 +3,15 @@ import { useFrame, useThree } from '@react-three/fiber';
 import * as THREE from 'three';
 import { heightAt } from '@/lib/landscape-geometry';
 import type { LandscapePalette } from './LandscapeScene';
+import { SEA_LEVEL, createVehicles, type Vehicle } from '@/lib/game-world';
 
 export type CharacterKind = 'toy' | 'bird';
 export type GameState = {
   keys: Set<string>; joy: { x: number; y: number }; jumpHeld: boolean; downHeld: boolean;
   pos: THREE.Vector3; vel: THREE.Vector3; yaw: number; grounded: boolean;
   camYaw: number; camPitch: number; camDist: number;
+  mode: 'foot' | 'vehicle'; vid: number; vehicles: Vehicle[]; tankBonus: number; collected: boolean[];
+  quest: 'find' | 'carry' | 'done'; message: string; messageUntil: number; heading: number; camUnder: boolean; lastDrag: number;
 };
 
 // Feel constants
@@ -18,13 +21,15 @@ export const SPAWN = new THREE.Vector3(7, 0, 14);
 
 export function createGame(): GameState {
   return { keys: new Set(), joy: { x: 0, y: 0 }, jumpHeld: false, downHeld: false, pos: SPAWN.clone().setY(heightAt(SPAWN.x, SPAWN.z)),
-    vel: new THREE.Vector3(), yaw: Math.PI, grounded: true, camYaw: 0, camPitch: .32, camDist: 9 };
+    vel: new THREE.Vector3(), yaw: Math.PI, grounded: true, camYaw: 0, camPitch: .32, camDist: 9,
+    mode: 'foot', vid: -1, vehicles: createVehicles(), tankBonus: 0, collected: [], quest: 'find', message: '', messageUntil: 0, heading: 0, camUnder: false, lastDrag: 0 };
 }
 export function respawn(g: GameState, kind: CharacterKind) {
+  g.mode = 'foot'; g.vid = -1;
   g.pos.copy(SPAWN).setY(heightAt(SPAWN.x, SPAWN.z) + (kind === 'bird' ? 4 : 0)); g.vel.set(0, 0, 0); g.yaw = Math.PI; g.camYaw = 0; g.camPitch = .32;
 }
 
-function readInput(g: GameState) {
+export function readInput(g: GameState) {
   const k = g.keys;
   let x = (k.has('KeyD') || k.has('ArrowRight') ? 1 : 0) - (k.has('KeyA') || k.has('ArrowLeft') ? 1 : 0);
   let y = (k.has('KeyW') || k.has('ArrowUp') ? 1 : 0) - (k.has('KeyS') || k.has('ArrowDown') ? 1 : 0);
@@ -45,10 +50,14 @@ export function Player({ game, kind, palette }: { game: GameState; kind: Charact
 
   useFrame((state, raw) => {
     const dt = Math.min(raw, .05), g = game, input = readInput(g), t = state.clock.elapsedTime;
+    const hidden = g.mode === 'vehicle';
+    if (root.current) root.current.visible = !hidden; if (shadow.current) shadow.current.visible = !hidden;
+    if (hidden) { g.vel.set(0, 0, 0); return; }
+    const swim = kind === 'toy' && g.pos.y < SEA_LEVEL - .8;
     const s = Math.sin(g.camYaw), c = Math.cos(g.camYaw);
     // camera-relative: forward = away from camera, right = camera right
     const dx = -s * input.y + c * input.x, dz = -c * input.y - s * input.x;
-    const speed = kind === 'bird' ? (input.run ? FLY_BOOST : FLY) : (input.run ? RUN : WALK);
+    const speed = kind === 'bird' ? (input.run ? FLY_BOOST : FLY) : (input.run ? RUN : WALK) * (swim ? .55 : 1);
     target.current.set(dx * speed, 0, dz * speed);
     const k = 1 - Math.exp(-(kind === 'bird' ? ACCEL * .5 : g.grounded ? ACCEL : ACCEL * .35) * dt);
     g.vel.x += (target.current.x - g.vel.x) * k; g.vel.z += (target.current.z - g.vel.z) * k;
@@ -57,9 +66,13 @@ export function Player({ game, kind, palette }: { game: GameState; kind: Charact
       const vy = (input.up ? CLIMB : 0) - (input.down ? CLIMB : 0);
       g.vel.y += (vy - g.vel.y) * (1 - Math.exp(-5 * dt));
     } else {
-      if (input.up && g.grounded && !jumpLatch.current) { g.vel.y = JUMP; g.grounded = false; }
+      if (swim) { // underwater: buoyant, hold Space to swim up
+        g.vel.y += ((input.up ? 4 : -2.2) - g.vel.y) * (1 - Math.exp(-3 * dt));
+      } else {
+        if (input.up && g.grounded && !jumpLatch.current) { g.vel.y = JUMP; g.grounded = false; }
+        g.vel.y -= GRAVITY * dt;
+      }
       jumpLatch.current = input.up;
-      g.vel.y -= GRAVITY * dt;
     }
     g.pos.addScaledVector(g.vel, dt);
     // open world: terrain is streamed in chunks, no hard boundary
@@ -141,6 +154,7 @@ export function FollowCamera({ game }: { game: GameState }) {
       const p = pts.get(e.pointerId); if (!p) return;
       if (pts.size === 2) { const [a, b] = [...pts.values()]; const d0 = Math.hypot(a!.x - b!.x, a!.y - b!.y); p.x = e.clientX; p.y = e.clientY;
         const d1 = Math.hypot(a!.x - b!.x, a!.y - b!.y); if (pinch) game.camDist = THREE.MathUtils.clamp(game.camDist * d0 / d1, 4, 26); pinch = d1; return; }
+      game.lastDrag = performance.now();
       game.camYaw -= (e.clientX - p.x) * .006; game.camPitch = THREE.MathUtils.clamp(game.camPitch + (e.clientY - p.y) * .004, -.1, 1.2);
       p.x = e.clientX; p.y = e.clientY;
     };
@@ -151,13 +165,18 @@ export function FollowCamera({ game }: { game: GameState }) {
     return () => { el.removeEventListener('pointerdown', down); el.removeEventListener('pointermove', move); el.removeEventListener('pointerup', up); el.removeEventListener('pointercancel', up); el.removeEventListener('wheel', wheel); };
   }, [gl, game]);
   useFrame((_, raw) => {
-    const dt = Math.min(raw, .05), g = game, d = g.camDist;
+    const dt = Math.min(raw, .05), g = game, v = g.mode === 'vehicle' ? g.vehicles[g.vid] : undefined;
+    const d = g.camDist + (v ? (v.type === 'plane' ? 9 : 3) : 0);
+    if (v && performance.now() - g.lastDrag > 1500 && Math.abs(v.speed) > 1) {
+      const want = v.yaw + Math.PI; g.camYaw += Math.atan2(Math.sin(want - g.camYaw), Math.cos(want - g.camYaw)) * (1 - Math.exp(-2.5 * dt));
+    }
     want.current.set(g.pos.x + Math.sin(g.camYaw) * Math.cos(g.camPitch) * d, g.pos.y + 1.6 + Math.sin(g.camPitch) * d, g.pos.z + Math.cos(g.camYaw) * Math.cos(g.camPitch) * d);
     want.current.y = Math.max(want.current.y, heightAt(want.current.x, want.current.z) + .8);
     const k = first.current ? 1 : 1 - Math.exp(-6 * dt); first.current = false;
     camera.position.lerp(want.current, k);
     look.current.lerp(new THREE.Vector3(g.pos.x, g.pos.y + 1.4, g.pos.z), first.current ? 1 : 1 - Math.exp(-10 * dt));
     camera.lookAt(look.current);
+    g.camUnder = camera.position.y < SEA_LEVEL;
   });
   return null;
 }

@@ -98,6 +98,13 @@
   --scene-toy-hat: oklch(0.8 0.15 85);
   --scene-bird: oklch(0.55 0.15 240);
   --scene-bird-wing: oklch(0.4 0.12 250);
+  --scene-sand: oklch(0.84 0.07 85);
+  --scene-water: oklch(0.55 0.11 225);
+  --scene-road: oklch(0.5 0.01 80);
+  --scene-car: oklch(0.63 0.2 28);
+  --scene-plane: oklch(0.93 0.02 90);
+  --scene-fuel: oklch(0.7 0.19 145);
+  --scene-gold: oklch(0.82 0.16 85);
   --overlay: oklch(0.18 0.018 170 / 68%);
   --overlay-border: oklch(0.97 0.008 110 / 18%);
   --overlay-shadow: 0 8px 36px oklch(0.1 0.01 170 / 22%);
@@ -204,3 +211,21 @@
 .touch-buttons { position: absolute; right: 28px; bottom: 130px; display: flex; flex-direction: column; gap: 12px; }
 .touch-buttons button { width: 68px; height: 68px; border-radius: 50%; touch-action: none; }
 @media (max-width: 640px) { .game-hud { top: 120px; left: 12px; right: 12px; max-width: none; } .game-hud .hint { display: none; } }
+
+.nav-hud { position: absolute; top: 28px; right: 28px; display: flex; flex-direction: column; align-items: flex-end; gap: 8px; pointer-events: none; }
+.compass { position: relative; width: 66px; height: 66px; border-radius: 50%; border: 1px solid var(--overlay-border); background: var(--overlay); backdrop-filter: blur(12px); }
+.compass-dial { position: absolute; inset: 0; }
+.compass-dial span { position: absolute; left: 50%; top: 50%; width: 14px; height: 14px; margin: -7px; font-size: 10px; font-weight: 600; text-align: center; line-height: 14px; }
+.compass-dial span.north { color: var(--scene-car); }
+.compass-needle { position: absolute; left: 50%; top: 4px; width: 0; height: 0; margin-left: -4px; border: 4px solid transparent; border-top: 7px solid var(--foreground); }
+.minimap { width: 160px; height: 160px; border-radius: 50%; border: 1px solid var(--overlay-border); background: var(--overlay); }
+.quest-card, .gauge-card { display: flex; flex-direction: column; gap: 3px; padding: 9px 11px; border: 1px solid var(--overlay-border); background: var(--overlay); backdrop-filter: blur(16px); border-radius: 8px; font-size: 11px; max-width: 210px; }
+.muted { opacity: .65; }
+.gauge-card { position: absolute; left: 42px; bottom: 110px; width: 220px; max-width: none; pointer-events: none; }
+.gauge-head { display: flex; justify-content: space-between; gap: 8px; }
+.fuel-bar { height: 8px; border-radius: 4px; background: var(--overlay-border); overflow: hidden; }
+.fuel-bar i { display: block; height: 100%; background: var(--scene-fuel); transition: width .2s; }
+.fuel-bar i.low { background: var(--scene-car); }
+.game-toast { position: absolute; left: 50%; top: 30px; transform: translateX(-50%); padding: 8px 14px; border-radius: 999px; background: var(--overlay); border: 1px solid var(--overlay-border); backdrop-filter: blur(16px); font-size: 12px; pointer-events: none; white-space: nowrap; }
+.underwater-tint { position: absolute; inset: 0; pointer-events: none; background: color-mix(in oklch, var(--scene-water) 45%, transparent); }
+@media (max-width: 640px) { .nav-hud { top: 70px; right: 12px; } .minimap { width: 110px; height: 110px; } .quest-card { max-width: 150px; } .gauge-card { left: 12px; bottom: 150px; width: 180px; } .game-toast { top: 12px; white-space: normal; width: 80%; text-align: center; } }
