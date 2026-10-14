@@ -15,7 +15,7 @@ function Roads() {
 
 function Sea({ game, palette }: { game: GameState; palette: LandscapePalette }) {
   const ref = useRef<THREE.Mesh>(null);
-  useFrame(({ clock }) => { const m = ref.current; if (m) { m.position.x = game.pos.x; m.position.y = SEA_LEVEL + Math.sin(clock.elapsedTime * .8) * .06; } });
+  useFrame(({ clock }) => { const m = ref.current; if (m) { m.position.x = game.pos.x; m.position.z = Math.max(1180, game.pos.z); m.position.y = SEA_LEVEL + Math.sin(clock.elapsedTime * .8) * .06; } });
   return <mesh ref={ref} rotation-x={-Math.PI / 2} position={[0, SEA_LEVEL, 1180]}>
     <planeGeometry args={[2400, 1600]} />
     <meshStandardMaterial color={palette.water} transparent opacity={.72} roughness={.15} metalness={.2} side={THREE.DoubleSide} depthWrite={false} />
