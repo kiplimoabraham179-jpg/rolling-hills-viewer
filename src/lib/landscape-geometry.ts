@@ -27,7 +27,11 @@ export function heightAt(x: number, z: number) {
   const hills = 14 * vnoise(x / 90, z / 90) + 6 * vnoise(x / 37 + 9, z / 37 - 4);
   const ridge = 1 - Math.abs(vnoise(x / 160 - 3, z / 160 + 7) * 2 - 1);
   const mountains = 55 * ridge ** 2.2 * vnoise(x / 300 + 1, z / 300 + 2);
-  return hill + rolls + valley + slopes - 3 + far * (hills + mountains - 8);
+  const land = hill + rolls + valley + slopes - 3 + far * (hills + mountains - 8);
+  // southern coastline (z 400→520, mirrors COAST_* in game-world): beach then a walkable seabed
+  const coast = THREE.MathUtils.smoothstep(z + 14 * Math.sin(x / 70), 400, 520);
+  const seabed = -15 + 2.5 * Math.sin(x * .06) * Math.cos(z * .05) + 1.5 * vnoise(x / 20, z / 20);
+  return land * (1 - coast) + seabed * coast;
 }
 
 export function makeTerrain(grass: THREE.Color, light: THREE.Color, forest: THREE.Color) {
