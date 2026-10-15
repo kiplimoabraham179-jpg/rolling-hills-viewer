@@ -16,8 +16,16 @@ function vnoise(x: number, z: number) {
   return a + (b - a) * u + (c - a) * v + (a - b - c + d) * u * v;
 }
 
-/** Infinite, deterministic ground height (used by streamed chunks and collision). */
-export function heightAt(x: number, z: number) {
+/** Airfield: a flattened strip west of the start hill, runway along the X axis. */
+export const RUNWAY = { x: -120, z: 25, halfLength: 70, halfWidth: 9, h: 0 } as const;
+export function runwayWeight(x: number, z: number) {
+  const dx = Math.abs(x - RUNWAY.x), dz = Math.abs(z - RUNWAY.z);
+  return (1 - THREE.MathUtils.smoothstep(dx, RUNWAY.halfLength + 8, RUNWAY.halfLength + 30)) * (1 - THREE.MathUtils.smoothstep(dz, RUNWAY.halfWidth + 8, RUNWAY.halfWidth + 28));
+}
+export const LAKE = { x: -150, z: -150, r: 48 } as const;
+export const PEAK = { x: 60, z: -620 } as const;
+
+function baseHeight(x: number, z: number) {
   const hill = 8 * Math.exp(-(x * x / 850 + z * z / 1000));
   const rolls = 3.2 * Math.sin(x * .047 + .4) * Math.cos(z * .052) + 1.2 * Math.sin(z * .11 + x * .025);
   const valley = -9 * Math.exp(-((z + 42) ** 2 / 450)) * Math.exp(-(x * x / 900));
@@ -27,11 +35,33 @@ export function heightAt(x: number, z: number) {
   const hills = 14 * vnoise(x / 90, z / 90) + 6 * vnoise(x / 37 + 9, z / 37 - 4);
   const ridge = 1 - Math.abs(vnoise(x / 160 - 3, z / 160 + 7) * 2 - 1);
   const mountains = 55 * ridge ** 2.2 * vnoise(x / 300 + 1, z / 300 + 2);
-  const land = hill + rolls + valley + slopes - 3 + far * (hills + mountains - 8);
+  // tall, climbable massifs: the great northern peak and a western range
+  const crag = .75 + .25 * vnoise(x / 40, z / 40) + .12 * Math.sin(x / 23) * Math.cos(z / 19);
+  const massif = 165 * Math.exp(-(((x - PEAK.x) ** 2) / 26000 + ((z - PEAK.z) ** 2) / 20000)) * crag
+    + 120 * Math.exp(-(((x + 560) ** 2) / 15000 + ((z - 180) ** 2) / 40000)) * crag;
+  const lake = -14 * Math.exp(-(((x - LAKE.x) ** 2 + (z - LAKE.z) ** 2) / (LAKE.r * LAKE.r)));
+  const land = hill + rolls + valley + slopes - 3 + far * (hills + mountains - 8) + massif + lake;
   // southern coastline (z 400→520, mirrors COAST_* in game-world): beach then a walkable seabed
   const coast = THREE.MathUtils.smoothstep(z + 14 * Math.sin(x / 70), 400, 520);
   const seabed = -15 + 2.5 * Math.sin(x * .06) * Math.cos(z * .05) + 1.5 * vnoise(x / 20, z / 20);
   return land * (1 - coast) + seabed * coast;
+}
+
+/** Infinite, deterministic ground height (used by streamed chunks). */
+export function heightAt(x: number, z: number) {
+  const w = runwayWeight(x, z), b = baseHeight(x, z);
+  return w > 0 ? b + (RUNWAY.h - b) * w : b;
+}
+
+/** Terrain mesh grid spacing (CHUNK_SIZE / CHUNK_SEGMENTS). */
+export const GROUND_GRID = 2.5;
+/** Exact height of the rendered terrain triangles, so contact never sinks or floats. */
+export function groundAt(x: number, z: number) {
+  const gx = x / GROUND_GRID, gz = z / GROUND_GRID, ix = Math.floor(gx), iz = Math.floor(gz), fx = gx - ix, fz = gz - iz;
+  const x0 = ix * GROUND_GRID, z0 = iz * GROUND_GRID, x1 = x0 + GROUND_GRID, z1 = z0 + GROUND_GRID;
+  const hb = heightAt(x0, z1), hd = heightAt(x1, z0);
+  if (fx + fz <= 1) { const ha = heightAt(x0, z0); return ha + (hd - ha) * fx + (hb - ha) * fz; }
+  const hc = heightAt(x1, z1); return hc + (hb - hc) * (1 - fx) + (hd - hc) * (1 - fz);
 }
 
 export function makeTerrain(grass: THREE.Color, light: THREE.Color, forest: THREE.Color) {

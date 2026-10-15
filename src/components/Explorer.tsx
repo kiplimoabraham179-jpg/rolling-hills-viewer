@@ -1,9 +1,11 @@
 import { useEffect, useRef } from 'react';
 import { useFrame, useThree } from '@react-three/fiber';
 import * as THREE from 'three';
-import { heightAt } from '@/lib/landscape-geometry';
+import { groundAt } from '@/lib/landscape-geometry';
 import type { LandscapePalette } from './LandscapeScene';
-import { SEA_LEVEL, createVehicles, type Vehicle } from '@/lib/game-world';
+import { HOME_RADIUS, SEA_LEVEL, createVehicles, type Vehicle } from '@/lib/game-world';
+import { collideCircle } from '@/lib/world-chunks';
+import { hurtPlayer, say } from './game-rules';
 
 export type CharacterKind = 'toy' | 'bird';
 export type GameState = {
@@ -11,22 +13,29 @@ export type GameState = {
   pos: THREE.Vector3; vel: THREE.Vector3; yaw: number; grounded: boolean;
   camYaw: number; camPitch: number; camDist: number;
   mode: 'foot' | 'vehicle'; vid: number; vehicles: Vehicle[]; tankBonus: number; collected: boolean[];
-  quest: 'find' | 'carry' | 'done'; message: string; messageUntil: number; heading: number; camUnder: boolean; lastDrag: number;
+  quest: 'find' | 'carry' | 'done'; treasureIdx: number; deposited: number; discovered: boolean;
+  health: number; hurtAt: number;
+  message: string; messageUntil: number; heading: number; camUnder: boolean; lastDrag: number;
 };
 
 // Feel constants
 const WALK = 6, RUN = 11, FLY = 13, FLY_BOOST = 22, ACCEL = 9, GRAVITY = 26, JUMP = 9.5, CLIMB = 9;
-const TURN = 12;
+const TURN = 12, BUMP_SPEED = 3.5, BUMP_DAMAGE = 1.2, SAFE_FALL = 16, FALL_DAMAGE = 4, HOME_HEAL = 8;
 export const SPAWN = new THREE.Vector3(7, 0, 14);
 
+/** Highest ground under a small footprint so feet never dip into a slope. */
+export const footGround = (x: number, z: number, r: number) =>
+  Math.max(groundAt(x, z), groundAt(x + r, z), groundAt(x - r, z), groundAt(x, z + r), groundAt(x, z - r));
+
 export function createGame(): GameState {
-  return { keys: new Set(), joy: { x: 0, y: 0 }, jumpHeld: false, downHeld: false, pos: SPAWN.clone().setY(heightAt(SPAWN.x, SPAWN.z)),
+  return { keys: new Set(), joy: { x: 0, y: 0 }, jumpHeld: false, downHeld: false, pos: SPAWN.clone().setY(footGround(SPAWN.x, SPAWN.z, .25)),
     vel: new THREE.Vector3(), yaw: Math.PI, grounded: true, camYaw: 0, camPitch: .32, camDist: 9,
-    mode: 'foot', vid: -1, vehicles: createVehicles(), tankBonus: 0, collected: [], quest: 'find', message: '', messageUntil: 0, heading: 0, camUnder: false, lastDrag: 0 };
+    mode: 'foot', vid: -1, vehicles: createVehicles(), tankBonus: 0, collected: [], quest: 'find', treasureIdx: 0, deposited: 0, discovered: false,
+    health: 100, hurtAt: 0, message: '', messageUntil: 0, heading: 0, camUnder: false, lastDrag: 0 };
 }
 export function respawn(g: GameState, kind: CharacterKind) {
   g.mode = 'foot'; g.vid = -1;
-  g.pos.copy(SPAWN).setY(heightAt(SPAWN.x, SPAWN.z) + (kind === 'bird' ? 4 : 0)); g.vel.set(0, 0, 0); g.yaw = Math.PI; g.camYaw = 0; g.camPitch = .32;
+  g.pos.copy(SPAWN).setY(footGround(SPAWN.x, SPAWN.z, .25) + (kind === 'bird' ? 4 : 0)); g.vel.set(0, 0, 0); g.yaw = Math.PI; g.camYaw = 0; g.camPitch = .32;
 }
 
 export function readInput(g: GameState) {
@@ -61,7 +70,7 @@ export function Player({ game, kind, palette }: { game: GameState; kind: Charact
     target.current.set(dx * speed, 0, dz * speed);
     const k = 1 - Math.exp(-(kind === 'bird' ? ACCEL * .5 : g.grounded ? ACCEL : ACCEL * .35) * dt);
     g.vel.x += (target.current.x - g.vel.x) * k; g.vel.z += (target.current.z - g.vel.z) * k;
-    const ground = heightAt(g.pos.x, g.pos.z);
+    const ground = groundAt(g.pos.x, g.pos.z);
     if (kind === 'bird') {
       const vy = (input.up ? CLIMB : 0) - (input.down ? CLIMB : 0);
       g.vel.y += (vy - g.vel.y) * (1 - Math.exp(-5 * dt));
@@ -74,24 +83,34 @@ export function Player({ game, kind, palette }: { game: GameState; kind: Charact
       }
       jumpLatch.current = input.up;
     }
+    const preHs = Math.hypot(g.vel.x, g.vel.z);
     g.pos.addScaledVector(g.vel, dt);
     // open world: terrain is streamed in chunks, no hard boundary
     if (!Number.isFinite(g.pos.x) || !Number.isFinite(g.pos.z)) g.pos.copy(SPAWN);
-    // tree trunk collision
-    const tr = Math.hypot(g.pos.x, g.pos.z), floor = heightAt(g.pos.x, g.pos.z);
-    if (tr < 1.3 && g.pos.y < floor + 6) { const f = 1.3 / Math.max(tr, .001); g.pos.x *= f; g.pos.z *= f; }
-    // terrain following
-    const minY = heightAt(g.pos.x, g.pos.z) + (kind === 'bird' ? 1.2 : 0);
-    if (g.pos.y <= minY) { g.pos.y = minY; if (g.vel.y < 0) g.vel.y = 0; g.grounded = true; }
+    // trees and rocks: push out of their collision cylinders, bumps at speed cost health
+    const hit = collideCircle(g.pos.x, g.pos.z, g.pos.y + (kind === 'bird' ? .5 : 0), kind === 'bird' ? .55 : .42, kind === 'bird' ? 1.2 : 2.2);
+    if (hit.hit) {
+      g.pos.x = hit.x; g.pos.z = hit.z; g.vel.x *= .25; g.vel.z *= .25;
+      if (preHs > BUMP_SPEED) hurtPlayer(g, preHs * BUMP_DAMAGE, hit.kind === 'rock' ? 'Ouch, a rock!' : 'Bonk, a tree!');
+    }
+    // terrain following on the exact rendered surface
+    const minY = footGround(g.pos.x, g.pos.z, .22) + (kind === 'bird' ? 1.2 : 0);
+    if (g.pos.y <= minY) {
+      if (kind === 'toy' && !swim && g.vel.y < -SAFE_FALL) hurtPlayer(g, (-g.vel.y - SAFE_FALL) * FALL_DAMAGE, 'Hard landing!');
+      g.pos.y = minY; if (g.vel.y < 0) g.vel.y = 0; g.grounded = true;
+    }
     else if (kind === 'toy' && g.grounded && g.pos.y - minY < .45 && g.vel.y <= 0) g.pos.y = minY; // stick to downhill slopes
     else g.grounded = kind === 'bird' ? false : g.pos.y - minY < .02;
     if (kind === 'bird') g.pos.y = Math.min(g.pos.y, ground + 60);
+    // health: heal at the golden tree, faint gracefully at zero
+    if (Math.hypot(g.pos.x, g.pos.z) < HOME_RADIUS * 2 && g.health < 100) g.health = Math.min(100, g.health + HOME_HEAL * dt);
+    if (g.health <= 0) { respawn(g, kind); g.health = 100; g.hurtAt = performance.now() + 1500; say(g, 'You fainted! Woke up safe beneath the golden tree', 4); }
 
     const hs = Math.hypot(g.vel.x, g.vel.z);
     if (hs > .3) g.yaw = lerpAngle(g.yaw, Math.atan2(g.vel.x, g.vel.z), 1 - Math.exp(-TURN * dt));
     const node = root.current; if (!node) return;
     node.position.copy(g.pos); node.rotation.y = g.yaw;
-    if (shadow.current) { shadow.current.position.set(g.pos.x, heightAt(g.pos.x, g.pos.z) + .05, g.pos.z); const h = g.pos.y - heightAt(g.pos.x, g.pos.z); shadow.current.scale.setScalar(Math.max(.3, 1 - h * .04)); }
+    if (shadow.current) { const sg = groundAt(g.pos.x, g.pos.z); shadow.current.position.set(g.pos.x, sg + .06, g.pos.z); shadow.current.scale.setScalar(Math.max(.3, 1 - (g.pos.y - sg) * .04)); }
 
     if (kind === 'toy') {
       phase.current += dt * (2 + hs * 1.6);
@@ -171,7 +190,7 @@ export function FollowCamera({ game }: { game: GameState }) {
       const want = v.yaw + Math.PI; g.camYaw += Math.atan2(Math.sin(want - g.camYaw), Math.cos(want - g.camYaw)) * (1 - Math.exp(-2.5 * dt));
     }
     want.current.set(g.pos.x + Math.sin(g.camYaw) * Math.cos(g.camPitch) * d, g.pos.y + 1.6 + Math.sin(g.camPitch) * d, g.pos.z + Math.cos(g.camYaw) * Math.cos(g.camPitch) * d);
-    want.current.y = Math.max(want.current.y, heightAt(want.current.x, want.current.z) + .8);
+    want.current.y = Math.max(want.current.y, groundAt(want.current.x, want.current.z) + .8);
     const k = first.current ? 1 : 1 - Math.exp(-6 * dt); first.current = false;
     camera.position.lerp(want.current, k);
     look.current.lerp(new THREE.Vector3(g.pos.x, g.pos.y + 1.4, g.pos.z), first.current ? 1 : 1 - Math.exp(-10 * dt));
