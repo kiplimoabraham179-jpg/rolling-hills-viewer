@@ -70,7 +70,7 @@ export function Player({ game, kind, palette }: { game: GameState; kind: Charact
     target.current.set(dx * speed, 0, dz * speed);
     const k = 1 - Math.exp(-(kind === 'bird' ? ACCEL * .5 : g.grounded ? ACCEL : ACCEL * .35) * dt);
     g.vel.x += (target.current.x - g.vel.x) * k; g.vel.z += (target.current.z - g.vel.z) * k;
-    const ground = heightAt(g.pos.x, g.pos.z);
+    const ground = groundAt(g.pos.x, g.pos.z);
     if (kind === 'bird') {
       const vy = (input.up ? CLIMB : 0) - (input.down ? CLIMB : 0);
       g.vel.y += (vy - g.vel.y) * (1 - Math.exp(-5 * dt));
@@ -83,24 +83,34 @@ export function Player({ game, kind, palette }: { game: GameState; kind: Charact
       }
       jumpLatch.current = input.up;
     }
+    const preHs = Math.hypot(g.vel.x, g.vel.z);
     g.pos.addScaledVector(g.vel, dt);
     // open world: terrain is streamed in chunks, no hard boundary
     if (!Number.isFinite(g.pos.x) || !Number.isFinite(g.pos.z)) g.pos.copy(SPAWN);
-    // tree trunk collision
-    const tr = Math.hypot(g.pos.x, g.pos.z), floor = heightAt(g.pos.x, g.pos.z);
-    if (tr < 1.3 && g.pos.y < floor + 6) { const f = 1.3 / Math.max(tr, .001); g.pos.x *= f; g.pos.z *= f; }
-    // terrain following
-    const minY = heightAt(g.pos.x, g.pos.z) + (kind === 'bird' ? 1.2 : 0);
-    if (g.pos.y <= minY) { g.pos.y = minY; if (g.vel.y < 0) g.vel.y = 0; g.grounded = true; }
+    // trees and rocks: push out of their collision cylinders, bumps at speed cost health
+    const hit = collideCircle(g.pos.x, g.pos.z, g.pos.y + (kind === 'bird' ? .5 : 0), kind === 'bird' ? .55 : .42, kind === 'bird' ? 1.2 : 2.2);
+    if (hit.hit) {
+      g.pos.x = hit.x; g.pos.z = hit.z; g.vel.x *= .25; g.vel.z *= .25;
+      if (preHs > BUMP_SPEED) hurtPlayer(g, preHs * BUMP_DAMAGE, hit.kind === 'rock' ? 'Ouch, a rock!' : 'Bonk, a tree!');
+    }
+    // terrain following on the exact rendered surface
+    const minY = footGround(g.pos.x, g.pos.z, .22) + (kind === 'bird' ? 1.2 : 0);
+    if (g.pos.y <= minY) {
+      if (kind === 'toy' && !swim && g.vel.y < -SAFE_FALL) hurtPlayer(g, (-g.vel.y - SAFE_FALL) * FALL_DAMAGE, 'Hard landing!');
+      g.pos.y = minY; if (g.vel.y < 0) g.vel.y = 0; g.grounded = true;
+    }
     else if (kind === 'toy' && g.grounded && g.pos.y - minY < .45 && g.vel.y <= 0) g.pos.y = minY; // stick to downhill slopes
     else g.grounded = kind === 'bird' ? false : g.pos.y - minY < .02;
     if (kind === 'bird') g.pos.y = Math.min(g.pos.y, ground + 60);
+    // health: heal at the golden tree, faint gracefully at zero
+    if (Math.hypot(g.pos.x, g.pos.z) < HOME_RADIUS * 2 && g.health < 100) g.health = Math.min(100, g.health + HOME_HEAL * dt);
+    if (g.health <= 0) { respawn(g, kind); g.health = 100; g.hurtAt = performance.now() + 1500; say(g, 'You fainted! Woke up safe beneath the golden tree', 4); }
 
     const hs = Math.hypot(g.vel.x, g.vel.z);
     if (hs > .3) g.yaw = lerpAngle(g.yaw, Math.atan2(g.vel.x, g.vel.z), 1 - Math.exp(-TURN * dt));
     const node = root.current; if (!node) return;
     node.position.copy(g.pos); node.rotation.y = g.yaw;
-    if (shadow.current) { shadow.current.position.set(g.pos.x, heightAt(g.pos.x, g.pos.z) + .05, g.pos.z); const h = g.pos.y - heightAt(g.pos.x, g.pos.z); shadow.current.scale.setScalar(Math.max(.3, 1 - h * .04)); }
+    if (shadow.current) { const sg = groundAt(g.pos.x, g.pos.z); shadow.current.position.set(g.pos.x, sg + .06, g.pos.z); shadow.current.scale.setScalar(Math.max(.3, 1 - (g.pos.y - sg) * .04)); }
 
     if (kind === 'toy') {
       phase.current += dt * (2 + hs * 1.6);
