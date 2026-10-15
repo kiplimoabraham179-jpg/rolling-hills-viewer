@@ -1,9 +1,11 @@
 import { useEffect, useRef } from 'react';
 import { useFrame, useThree } from '@react-three/fiber';
 import * as THREE from 'three';
-import { heightAt } from '@/lib/landscape-geometry';
+import { groundAt } from '@/lib/landscape-geometry';
 import type { LandscapePalette } from './LandscapeScene';
-import { SEA_LEVEL, createVehicles, type Vehicle } from '@/lib/game-world';
+import { HOME_RADIUS, SEA_LEVEL, createVehicles, type Vehicle } from '@/lib/game-world';
+import { collideCircle } from '@/lib/world-chunks';
+import { hurtPlayer, say } from './game-rules';
 
 export type CharacterKind = 'toy' | 'bird';
 export type GameState = {
@@ -11,22 +13,29 @@ export type GameState = {
   pos: THREE.Vector3; vel: THREE.Vector3; yaw: number; grounded: boolean;
   camYaw: number; camPitch: number; camDist: number;
   mode: 'foot' | 'vehicle'; vid: number; vehicles: Vehicle[]; tankBonus: number; collected: boolean[];
-  quest: 'find' | 'carry' | 'done'; message: string; messageUntil: number; heading: number; camUnder: boolean; lastDrag: number;
+  quest: 'find' | 'carry'; treasureIdx: number; deposited: number; discovered: boolean;
+  health: number; hurtAt: number;
+  message: string; messageUntil: number; heading: number; camUnder: boolean; lastDrag: number;
 };
 
 // Feel constants
 const WALK = 6, RUN = 11, FLY = 13, FLY_BOOST = 22, ACCEL = 9, GRAVITY = 26, JUMP = 9.5, CLIMB = 9;
-const TURN = 12;
+const TURN = 12, BUMP_SPEED = 3.5, BUMP_DAMAGE = 1.2, SAFE_FALL = 16, FALL_DAMAGE = 4, HOME_HEAL = 8;
 export const SPAWN = new THREE.Vector3(7, 0, 14);
 
+/** Highest ground under a small footprint so feet never dip into a slope. */
+export const footGround = (x: number, z: number, r: number) =>
+  Math.max(groundAt(x, z), groundAt(x + r, z), groundAt(x - r, z), groundAt(x, z + r), groundAt(x, z - r));
+
 export function createGame(): GameState {
-  return { keys: new Set(), joy: { x: 0, y: 0 }, jumpHeld: false, downHeld: false, pos: SPAWN.clone().setY(heightAt(SPAWN.x, SPAWN.z)),
+  return { keys: new Set(), joy: { x: 0, y: 0 }, jumpHeld: false, downHeld: false, pos: SPAWN.clone().setY(footGround(SPAWN.x, SPAWN.z, .25)),
     vel: new THREE.Vector3(), yaw: Math.PI, grounded: true, camYaw: 0, camPitch: .32, camDist: 9,
-    mode: 'foot', vid: -1, vehicles: createVehicles(), tankBonus: 0, collected: [], quest: 'find', message: '', messageUntil: 0, heading: 0, camUnder: false, lastDrag: 0 };
+    mode: 'foot', vid: -1, vehicles: createVehicles(), tankBonus: 0, collected: [], quest: 'find', treasureIdx: 0, deposited: 0, discovered: false,
+    health: 100, hurtAt: 0, message: '', messageUntil: 0, heading: 0, camUnder: false, lastDrag: 0 };
 }
 export function respawn(g: GameState, kind: CharacterKind) {
   g.mode = 'foot'; g.vid = -1;
-  g.pos.copy(SPAWN).setY(heightAt(SPAWN.x, SPAWN.z) + (kind === 'bird' ? 4 : 0)); g.vel.set(0, 0, 0); g.yaw = Math.PI; g.camYaw = 0; g.camPitch = .32;
+  g.pos.copy(SPAWN).setY(footGround(SPAWN.x, SPAWN.z, .25) + (kind === 'bird' ? 4 : 0)); g.vel.set(0, 0, 0); g.yaw = Math.PI; g.camYaw = 0; g.camPitch = .32;
 }
 
 export function readInput(g: GameState) {
