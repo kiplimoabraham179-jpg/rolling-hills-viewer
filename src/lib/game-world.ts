@@ -70,8 +70,6 @@ export const FUEL_BOTTLES: THREE.Vector3[] = (() => {
   return out;
 })();
 
-export const TREASURE = new THREE.Vector3(38, 0, 600);
-TREASURE.y = heightAt(TREASURE.x, TREASURE.z);
 export const HOME_RADIUS = 7;
 export { RUNWAY } from './landscape-geometry';
 
