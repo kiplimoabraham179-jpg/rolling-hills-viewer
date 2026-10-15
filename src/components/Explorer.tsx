@@ -13,7 +13,7 @@ export type GameState = {
   pos: THREE.Vector3; vel: THREE.Vector3; yaw: number; grounded: boolean;
   camYaw: number; camPitch: number; camDist: number;
   mode: 'foot' | 'vehicle'; vid: number; vehicles: Vehicle[]; tankBonus: number; collected: boolean[];
-  quest: 'find' | 'carry'; treasureIdx: number; deposited: number; discovered: boolean;
+  quest: 'find' | 'carry' | 'done'; treasureIdx: number; deposited: number; discovered: boolean;
   health: number; hurtAt: number;
   message: string; messageUntil: number; heading: number; camUnder: boolean; lastDrag: number;
 };
@@ -190,7 +190,7 @@ export function FollowCamera({ game }: { game: GameState }) {
       const want = v.yaw + Math.PI; g.camYaw += Math.atan2(Math.sin(want - g.camYaw), Math.cos(want - g.camYaw)) * (1 - Math.exp(-2.5 * dt));
     }
     want.current.set(g.pos.x + Math.sin(g.camYaw) * Math.cos(g.camPitch) * d, g.pos.y + 1.6 + Math.sin(g.camPitch) * d, g.pos.z + Math.cos(g.camYaw) * Math.cos(g.camPitch) * d);
-    want.current.y = Math.max(want.current.y, heightAt(want.current.x, want.current.z) + .8);
+    want.current.y = Math.max(want.current.y, groundAt(want.current.x, want.current.z) + .8);
     const k = first.current ? 1 : 1 - Math.exp(-6 * dt); first.current = false;
     camera.position.lerp(want.current, k);
     look.current.lerp(new THREE.Vector3(g.pos.x, g.pos.y + 1.4, g.pos.z), first.current ? 1 : 1 - Math.exp(-10 * dt));

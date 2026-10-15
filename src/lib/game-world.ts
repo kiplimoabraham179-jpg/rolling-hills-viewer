@@ -110,3 +110,5 @@ export function createVehicles(): Vehicle[] {
   return [mk('car', roadAX(24) + 1.6, 24, 0, 0), mk('car', roadAX(36) - 1.6, 36, 0, 1), mk('car', 110, roadBZ(110), Math.PI / 2, 2),
     mk('plane', RUNWAY.x + RUNWAY.halfLength - 8, RUNWAY.z - 3, -Math.PI / 2, 0), mk('plane', RUNWAY.x + RUNWAY.halfLength - 14, RUNWAY.z + 14, -Math.PI / 2, 1)];
 }
+export const TREASURE = treasureAt(0).pos;
+TREASURE.y = heightAt(TREASURE.x, TREASURE.z);
