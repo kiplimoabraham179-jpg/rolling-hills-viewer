@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { heightAt, seededRandom } from './landscape-geometry';
+import { LAKE, PEAK, RUNWAY, heightAt, seededRandom } from './landscape-geometry';
 
 /** Pure, deterministic world layout: sea, roads, fuel bottles, treasure, vehicle spawns. */
 export const SEA_LEVEL = -3;
@@ -73,15 +73,42 @@ export const FUEL_BOTTLES: THREE.Vector3[] = (() => {
 export const TREASURE = new THREE.Vector3(38, 0, 600);
 TREASURE.y = heightAt(TREASURE.x, TREASURE.z);
 export const HOME_RADIUS = 7;
+export { RUNWAY } from './landscape-geometry';
+
+/** Sequential treasure hunt: only one treasure exists at a time; the next spawns after a deposit. */
+const FIXED_TREASURES: { x: number; z: number; hint: string }[] = [
+  { x: 52, z: -58, hint: 'Hidden among the dark pines of the forest valley, north-east of the tree' },
+  { x: 38, z: 600, hint: 'Sunk on the seabed off the southern coast — dive for it' },
+  { x: LAKE.x + 6, z: LAKE.z - 4, hint: 'Resting on the bottom of the north-west lake' },
+  { x: PEAK.x - 30, z: PEAK.z + 40, hint: 'High on the snowy slopes of the great northern peak' },
+  { x: -430, z: 70, hint: 'Far to the west, beyond the airfield, at the foot of the western range' },
+];
+export function treasureAt(i: number) {
+  const f = FIXED_TREASURES[i];
+  if (f) return { pos: new THREE.Vector3(f.x, 0, f.z), hint: f.hint };
+  const r = seededRandom(7000 + i * 31); r();
+  const a = r() * Math.PI * 2, d = 380 + r() * 520;
+  return { pos: new THREE.Vector3(Math.sin(a) * d, 0, Math.cos(a) * d), hint: `Somewhere out in the wilds, roughly ${Math.round(d / 100) * 100} m from the golden tree` };
+}
 
 export type VehicleType = 'car' | 'plane';
-export type Vehicle = { type: VehicleType; pos: THREE.Vector3; yaw: number; speed: number; vy: number; pitch: number; roll: number; throttle: number; fuel: number; tint: number };
+export type Vehicle = { type: VehicleType; pos: THREE.Vector3; yaw: number; speed: number; vy: number; pitch: number; roll: number; throttle: number; fuel: number; tint: number; health: number; spawn: [number, number, number] };
 export const baseCap = (t: VehicleType) => t === 'car' ? 60 : 90;
+export const PLANE_GEAR = .74; // fuselage centre above wheel contact
+export const CAR_GEAR = 0;
+
+export function placeVehicle(v: Vehicle) {
+  const [x, z, yaw] = v.spawn;
+  v.pos.set(x, heightAt(x, z) + (v.type === 'plane' ? PLANE_GEAR : CAR_GEAR), z); v.yaw = yaw;
+  v.speed = 0; v.vy = 0; v.pitch = 0; v.roll = 0; v.throttle = 0; v.health = 100;
+}
 
 export function createVehicles(): Vehicle[] {
-  const mk = (type: VehicleType, x: number, z: number, yaw: number, tint: number): Vehicle => ({
-    type, pos: new THREE.Vector3(x, heightAt(x, z) + (type === 'plane' ? .55 : 0), z), yaw, speed: 0, vy: 0, pitch: 0, roll: 0, throttle: 0, fuel: baseCap(type), tint,
-  });
+  const mk = (type: VehicleType, x: number, z: number, yaw: number, tint: number): Vehicle => {
+    const v: Vehicle = { type, pos: new THREE.Vector3(), yaw, speed: 0, vy: 0, pitch: 0, roll: 0, throttle: 0, fuel: baseCap(type), tint, health: 100, spawn: [x, z, yaw] };
+    placeVehicle(v); return v;
+  };
+  // planes wait at the east end of the runway, nose pointing down the strip (west)
   return [mk('car', roadAX(24) + 1.6, 24, 0, 0), mk('car', roadAX(36) - 1.6, 36, 0, 1), mk('car', 110, roadBZ(110), Math.PI / 2, 2),
-    mk('plane', -16, 16, -.6, 0), mk('plane', -22, -2, -.9, 1)];
+    mk('plane', RUNWAY.x + RUNWAY.halfLength - 8, RUNWAY.z - 3, -Math.PI / 2, 0), mk('plane', RUNWAY.x + RUNWAY.halfLength - 14, RUNWAY.z + 14, -Math.PI / 2, 1)];
 }
