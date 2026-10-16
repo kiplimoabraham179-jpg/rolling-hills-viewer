@@ -8,7 +8,7 @@ import { Vehicles } from './Vehicles';
 import { WorldFeatures } from './WorldFeatures';
 import { CHUNK_RADIUS, CHUNK_SIZE, makeChunk } from '@/lib/world-chunks';
 
-export type LandscapePalette = Record<'sky' | 'mist' | 'grass' | 'grassLight' | 'forest' | 'mountain' | 'leaf' | 'leafLight' | 'bark' | 'sun' | 'toySkin' | 'toyShirt' | 'toyPants' | 'toyHat' | 'bird' | 'birdWing' | 'sand' | 'water' | 'road' | 'car' | 'plane' | 'fuel' | 'gold', THREE.Color>;
+export type LandscapePalette = Record<'sky' | 'mist' | 'grass' | 'grassLight' | 'forest' | 'mountain' | 'leaf' | 'leafLight' | 'bark' | 'sun' | 'toySkin' | 'toyShirt' | 'toyPants' | 'toyHat' | 'bird' | 'birdWing' | 'sand' | 'water' | 'waterDeep' | 'foam' | 'road' | 'car' | 'plane' | 'fuel' | 'gold', THREE.Color>;
 
 function Tree({ palette }: { palette: LandscapePalette }) {
   const tree = useMemo(makeTree, []);
