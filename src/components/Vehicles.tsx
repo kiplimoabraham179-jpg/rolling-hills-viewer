@@ -2,7 +2,7 @@ import { useRef } from 'react';
 import { useFrame } from '@react-three/fiber';
 import * as THREE from 'three';
 import { heightAt } from '@/lib/landscape-geometry';
-import { SEA_LEVEL, WIND, baseCap, roadDist, type Vehicle } from '@/lib/game-world';
+import { SEA_LEVEL, WIND, baseCap, placeVehicle, roadDist, type Vehicle } from '@/lib/game-world';
 import { collideCircle } from '@/lib/world-chunks';
 import { hurtVehicle } from './game-rules';
 import { readInput, type GameState } from './Explorer';
@@ -99,6 +99,13 @@ export function Vehicles({ game, palette }: { game: GameState; palette: Landscap
     const dt = Math.min(raw, .05), g = game;
     const v = g.mode === 'vehicle' ? g.vehicles[g.vid] : undefined;
     if (v) { if (v.type === 'car') driveCar(g, v, dt); else flyPlane(g, v, dt); g.pos.copy(v.pos); g.yaw = v.yaw; }
+    // a wrecked vehicle is towed back to its parking spot, good as new
+    g.vehicles.forEach((veh, i) => {
+      if (veh.health > 0) return;
+      placeVehicle(veh); veh.fuel = vehicleCap(g, veh) * .5;
+      if (g.vid === i && g.mode === 'vehicle') { g.mode = 'foot'; g.vid = -1; g.pos.set(veh.pos.x + 3, veh.pos.y, veh.pos.z); g.vel.set(0, 0, 0); }
+      say(g, `The toy ${veh.type} broke! It was towed home and fixed`, 4);
+    });
     g.vehicles.forEach((veh, i) => {
       const n = refs.current[i]; if (!n) return;
       n.position.copy(veh.pos); n.rotation.set(veh.pitch, veh.yaw, veh.roll, 'YXZ');
