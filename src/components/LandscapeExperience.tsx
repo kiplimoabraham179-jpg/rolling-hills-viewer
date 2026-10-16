@@ -57,7 +57,7 @@ export default function LandscapeExperience() {
 
   useEffect(() => {
     const css = getComputedStyle(document.documentElement);
-    const names = { sky: 'sky', mist: 'mist', grass: 'grass', grassLight: 'grass-light', forest: 'forest', mountain: 'mountain', leaf: 'leaf', leafLight: 'leaf-light', bark: 'bark', sun: 'sun', toySkin: 'toy-skin', toyShirt: 'toy-shirt', toyPants: 'toy-pants', toyHat: 'toy-hat', bird: 'bird', birdWing: 'bird-wing', sand: 'sand', water: 'water', road: 'road', car: 'car', plane: 'plane', fuel: 'fuel', gold: 'gold' };
+    const names = { sky: 'sky', mist: 'mist', grass: 'grass', grassLight: 'grass-light', forest: 'forest', mountain: 'mountain', leaf: 'leaf', leafLight: 'leaf-light', bark: 'bark', sun: 'sun', toySkin: 'toy-skin', toyShirt: 'toy-shirt', toyPants: 'toy-pants', toyHat: 'toy-hat', bird: 'bird', birdWing: 'bird-wing', sand: 'sand', water: 'water', waterDeep: 'water-deep', foam: 'foam', road: 'road', car: 'car', plane: 'plane', fuel: 'fuel', gold: 'gold' } satisfies Record<keyof LandscapePalette, string>;
     const entries = Object.entries(names).map(([key, name]) => {
       // Browsers resolve OKLCH to sRGB through canvas; Three.js receives linear color.
       const canvas = document.createElement('canvas'); canvas.width = canvas.height = 1;

@@ -100,6 +100,8 @@
   --scene-bird-wing: oklch(0.4 0.12 250);
   --scene-sand: oklch(0.84 0.07 85);
   --scene-water: oklch(0.55 0.11 225);
+  --scene-water-deep: oklch(0.38 0.11 250);
+  --scene-foam: oklch(0.94 0.025 220);
   --scene-road: oklch(0.5 0.01 80);
   --scene-car: oklch(0.63 0.2 28);
   --scene-plane: oklch(0.93 0.02 90);

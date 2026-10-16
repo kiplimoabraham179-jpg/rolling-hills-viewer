@@ -8,7 +8,7 @@ import { nearestVehicle, vehicleCap } from './Vehicles';
 const MAP = 160, SCALE = 2.2, CELL = 4; // px, world units per px, px per terrain cell
 const ROADS = roadPaths();
 
-type Snap = { mode: GameState['mode']; type?: string; fuel: number; cap: number; speed: number; alt: number; near?: string; quest: GameState['quest']; dist: number; msg: string; bonus: number; bottles: number; under: boolean };
+type Snap = { mode: GameState['mode']; type: string | undefined; fuel: number; cap: number; speed: number; alt: number; near: string | undefined; quest: GameState['quest']; dist: number; msg: string; bonus: number; bottles: number; under: boolean };
 
 export function MapHud({ game }: { game: GameState }) {
   const map = useRef<HTMLCanvasElement>(null), dial = useRef<HTMLDivElement>(null);
