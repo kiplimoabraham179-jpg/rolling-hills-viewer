@@ -2,7 +2,9 @@ import { useRef } from 'react';
 import { useFrame } from '@react-three/fiber';
 import * as THREE from 'three';
 import { heightAt } from '@/lib/landscape-geometry';
-import { SEA_LEVEL, baseCap, roadDist, type Vehicle } from '@/lib/game-world';
+import { SEA_LEVEL, WIND, baseCap, placeVehicle, roadDist, type Vehicle } from '@/lib/game-world';
+import { collideCircle } from '@/lib/world-chunks';
+import { hurtVehicle } from './game-rules';
 import { readInput, type GameState } from './Explorer';
 import type { LandscapePalette } from './LandscapeScene';
 
@@ -46,6 +48,13 @@ function driveCar(g: GameState, v: Vehicle, dt: number) {
   if (heightAt(nx, nz) < SEA_LEVEL - .7) { v.speed *= -.2; say(g, 'Too deep for a toy car — swim the rest!', 1.5); }
   else if (Math.hypot(nx, nz) < 2.2) v.speed *= -.3; // golden tree trunk
   else { v.pos.x = nx; v.pos.z = nz; }
+  // trees and rocks: push the car out, crashes at speed cost durability
+  const hit = collideCircle(v.pos.x, v.pos.z, v.pos.y, .95, 1.4);
+  if (hit.hit) {
+    v.pos.x = hit.x; v.pos.z = hit.z;
+    if (Math.abs(v.speed) > 6) hurtVehicle(g, v, Math.abs(v.speed) * .9, hit.kind === 'rock' ? 'Crashed into a rock!' : 'Crashed into a tree!');
+    v.speed *= -.25;
+  }
   v.pos.y = heightAt(v.pos.x, v.pos.z);
   const fx = Math.sin(v.yaw) * 1.2, fz = Math.cos(v.yaw) * 1.2;
   v.pitch = Math.atan2(heightAt(v.pos.x - fx, v.pos.z - fz) - heightAt(v.pos.x + fx, v.pos.z + fz), 2.4);
@@ -64,7 +73,17 @@ function flyPlane(g: GameState, v: Vehicle, dt: number) {
   v.vy += (vyT - v.vy) * (1 - Math.exp(-2 * dt));
   v.yaw -= inp.x * PLANE_TURN * dt * (airborne ? 1 : .6) * Math.min(1, v.speed / 6 + .2);
   v.pos.x += Math.sin(v.yaw) * v.speed * dt; v.pos.z += Math.cos(v.yaw) * v.speed * dt; v.pos.y += v.vy * dt;
+  if (airborne) { // wind drifts the plane and helps or slows it
+    v.pos.x += Math.sin(WIND.angle) * WIND.speed * .4 * dt;
+    v.pos.z += Math.cos(WIND.angle) * WIND.speed * .4 * dt;
+  }
   if (Math.hypot(v.pos.x, v.pos.z) < 2.2 && v.pos.y < heightAt(0, 0) + 14) { v.speed *= .3; v.pos.x *= 1.1; v.pos.z *= 1.1; }
+  const phit = collideCircle(v.pos.x, v.pos.z, v.pos.y - .5, 1.4, 1.2);
+  if (phit.hit) {
+    v.pos.x = phit.x; v.pos.z = phit.z;
+    if (v.speed > 8) hurtVehicle(g, v, v.speed * .8, phit.kind === 'rock' ? 'Clipped a rock!' : 'Clipped a tree!');
+    v.speed *= .4;
+  }
   const g2 = Math.max(heightAt(v.pos.x, v.pos.z), SEA_LEVEL) + .55;
   if (v.pos.y <= g2) { v.pos.y = g2; v.vy = Math.max(v.vy, 0); if (v.throttle < .2) v.speed *= Math.exp(-1.2 * dt); }
   v.pos.y = Math.min(v.pos.y, CEILING);
@@ -80,6 +99,13 @@ export function Vehicles({ game, palette }: { game: GameState; palette: Landscap
     const dt = Math.min(raw, .05), g = game;
     const v = g.mode === 'vehicle' ? g.vehicles[g.vid] : undefined;
     if (v) { if (v.type === 'car') driveCar(g, v, dt); else flyPlane(g, v, dt); g.pos.copy(v.pos); g.yaw = v.yaw; }
+    // a wrecked vehicle is towed back to its parking spot, good as new
+    g.vehicles.forEach((veh, i) => {
+      if (veh.health > 0) return;
+      placeVehicle(veh); veh.fuel = vehicleCap(g, veh) * .5;
+      if (g.vid === i && g.mode === 'vehicle') { g.mode = 'foot'; g.vid = -1; g.pos.set(veh.pos.x + 3, veh.pos.y, veh.pos.z); g.vel.set(0, 0, 0); }
+      say(g, `The toy ${veh.type} broke! It was towed home and fixed`, 4);
+    });
     g.vehicles.forEach((veh, i) => {
       const n = refs.current[i]; if (!n) return;
       n.position.copy(veh.pos); n.rotation.set(veh.pitch, veh.yaw, veh.roll, 'YXZ');

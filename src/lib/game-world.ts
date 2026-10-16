@@ -73,13 +73,24 @@ export const FUEL_BOTTLES: THREE.Vector3[] = (() => {
 export const HOME_RADIUS = 7;
 export { RUNWAY } from './landscape-geometry';
 
-/** Sequential treasure hunt: only one treasure exists at a time; the next spawns after a deposit. */
+/** Wind: a slowly varying global breeze (angle = direction it blows toward, radians from north). */
+export const WIND = { angle: .7, speed: 4 };
+export function updateWind(t: number) {
+  WIND.angle = .7 + Math.sin(t * .05) * .9 + Math.sin(t * .017) * .5;
+  WIND.speed = 4 + Math.sin(t * .13) * 1.8 + Math.sin(t * .031) * 1.2;
+}
+export const windVec = (out: THREE.Vector3) => out.set(Math.sin(WIND.angle), 0, Math.cos(WIND.angle)).multiplyScalar(WIND.speed);
+
+/** Sequential treasure hunt: levels 1–7, each unlocked by depositing the previous one. */
+export const LEVELS = 7;
 const FIXED_TREASURES: { x: number; z: number; hint: string }[] = [
   { x: 52, z: -58, hint: 'Hidden among the dark pines of the forest valley, north-east of the tree' },
   { x: 38, z: 600, hint: 'Sunk on the seabed off the southern coast — dive for it' },
   { x: LAKE.x + 6, z: LAKE.z - 4, hint: 'Resting on the bottom of the north-west lake' },
   { x: PEAK.x - 30, z: PEAK.z + 40, hint: 'High on the snowy slopes of the great northern peak' },
   { x: -430, z: 70, hint: 'Far to the west, beyond the airfield, at the foot of the western range' },
+  { x: 300, z: -420, hint: 'Deep in the north-eastern wilds, past the far ridges' },
+  { x: -540, z: 320, hint: 'On the high shoulder of the western mountain range' },
 ];
 export function treasureAt(i: number) {
   const f = FIXED_TREASURES[i];
