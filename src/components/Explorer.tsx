@@ -3,7 +3,8 @@ import { useFrame, useThree } from '@react-three/fiber';
 import * as THREE from 'three';
 import { groundAt } from '@/lib/landscape-geometry';
 import type { LandscapePalette } from './LandscapeScene';
-import { HOME_RADIUS, SEA_LEVEL, createVehicles, type Vehicle } from '@/lib/game-world';
+import { HOME_RADIUS, SEA_LEVEL, WIND, createVehicles, type Vehicle } from '@/lib/game-world';
+import { sfx } from '@/lib/sfx';
 import { collideCircle } from '@/lib/world-chunks';
 import { hurtPlayer, say } from './game-rules';
 
@@ -78,13 +79,19 @@ export function Player({ game, kind, palette }: { game: GameState; kind: Charact
       if (swim) { // underwater: buoyant, hold Space to swim up
         g.vel.y += ((input.up ? 4 : -2.2) - g.vel.y) * (1 - Math.exp(-3 * dt));
       } else {
-        if (input.up && g.grounded && !jumpLatch.current) { g.vel.y = JUMP; g.grounded = false; }
+        if (input.up && g.grounded && !jumpLatch.current) { g.vel.y = JUMP; g.grounded = false; sfx.jump(); }
         g.vel.y -= GRAVITY * dt;
       }
       jumpLatch.current = input.up;
     }
     const preHs = Math.hypot(g.vel.x, g.vel.z);
     g.pos.addScaledVector(g.vel, dt);
+    // wind gently pushes anything airborne (jumps glide a little, birds drift)
+    if (!g.grounded || kind === 'bird') {
+      const wf = kind === 'bird' ? .3 : .12;
+      g.pos.x += Math.sin(WIND.angle) * WIND.speed * wf * dt;
+      g.pos.z += Math.cos(WIND.angle) * WIND.speed * wf * dt;
+    }
     // open world: terrain is streamed in chunks, no hard boundary
     if (!Number.isFinite(g.pos.x) || !Number.isFinite(g.pos.z)) g.pos.copy(SPAWN);
     // trees and rocks: push out of their collision cylinders, bumps at speed cost health
