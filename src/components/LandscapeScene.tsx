@@ -3,7 +3,8 @@ import { Environment, Lightformer } from '@react-three/drei';
 import { useFrame } from '@react-three/fiber';
 import * as THREE from 'three';
 import { Player, FollowCamera, type GameState, type CharacterKind } from './Explorer';
-import { heightAt, makeGrassTexture, makeMountains, makeTree } from '@/lib/landscape-geometry';
+import { PEAK, heightAt, makeGrassTexture, makeMountains, makeTree } from '@/lib/landscape-geometry';
+import { WIND } from '@/lib/game-world';
 import { Vehicles } from './Vehicles';
 import { WorldFeatures } from './WorldFeatures';
 import { CHUNK_RADIUS, CHUNK_SIZE, makeChunk } from '@/lib/world-chunks';
@@ -102,10 +103,10 @@ function Atmosphere({ palette, game }: { palette: LandscapePalette; game: GameSt
     <FollowWorld game={game} sun={sun}>
       <mesh geometry={sky}><meshBasicMaterial vertexColors side={THREE.BackSide} fog={false} depthWrite={false} /></mesh>
       {mountains.map((geometry, i) => <mesh key={i} geometry={geometry}>
-        <meshBasicMaterial color={palette.mountain.clone().lerp(palette.mist, .35 + i * .15)} fog={false} side={THREE.DoubleSide} />
+        <meshBasicMaterial color={palette.mountain.clone().lerp(palette.mist, .12 + i * .06)} fog={false} side={THREE.DoubleSide} />
       </mesh>)}
     </FollowWorld>
-    <fog attach="fog" args={[palette.mist, 110, 300]} />
+    <Snow palette={palette} />
     <hemisphereLight args={[palette.mist, palette.forest, .9]} />
     <directionalLight ref={sun} color={palette.sun} position={[-45, 32, 35]} intensity={2.7} castShadow
       shadow-mapSize={[2048, 2048]} shadow-camera-left={-25} shadow-camera-right={25}
@@ -116,6 +117,32 @@ function Atmosphere({ palette, game }: { palette: LandscapePalette; game: GameSt
       <Lightformer intensity={1} color={palette.sun} position={[-20, 15, 20]} scale={30} />
     </Environment>
   </>;
+}
+
+/** Localized falling snow around the great northern peak only — the rest of the sky stays clear. */
+function Snow({ palette }: { palette: LandscapePalette }) {
+  const COUNT = 500;
+  const ref = useRef<THREE.Points>(null);
+  const geo = useMemo(() => {
+    const g = new THREE.BufferGeometry(), pos = new Float32Array(COUNT * 3);
+    for (let i = 0; i < COUNT; i++) pos.set([PEAK.x + (Math.random() - .5) * 260, Math.random() * 190, PEAK.z + (Math.random() - .5) * 260], i * 3);
+    g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+    return g;
+  }, []);
+  useEffect(() => () => geo.dispose(), [geo]);
+  useFrame((_, raw) => {
+    const dt = Math.min(raw, .05), p = geo.getAttribute('position');
+    for (let i = 0; i < COUNT; i++) {
+      let y = p.getY(i) - (6 + (i % 5)) * dt;
+      const x = p.getX(i) + Math.sin(WIND.angle) * WIND.speed * .5 * dt, z = p.getZ(i) + Math.cos(WIND.angle) * WIND.speed * .5 * dt;
+      if (y < heightAt(x, z)) y = 150 + Math.random() * 40;
+      p.setXYZ(i, x > PEAK.x + 130 ? x - 260 : x < PEAK.x - 130 ? x + 260 : x, y, z > PEAK.z + 130 ? z - 260 : z < PEAK.z - 130 ? z + 260 : z);
+    }
+    p.needsUpdate = true;
+  });
+  return <points ref={ref} geometry={geo} frustumCulled={false}>
+    <pointsMaterial color={palette.foam} size={.9} sizeAttenuation transparent opacity={.85} />
+  </points>;
 }
 
 export function LandscapeScene({ palette, onReady, game, kind, follow }: { palette: LandscapePalette; onReady: () => void; game: GameState; kind: CharacterKind; follow: boolean }) {
