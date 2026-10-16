@@ -1,5 +1,6 @@
 import type { GameState } from './Explorer';
 import type { Vehicle } from '@/lib/game-world';
+import { sfx } from '@/lib/sfx';
 
 export const say = (g: GameState, text: string, secs = 3) => { g.message = text; g.messageUntil = performance.now() + secs * 1000; };
 
