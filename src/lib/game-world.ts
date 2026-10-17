@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { LAKE, PEAK, RUNWAY, heightAt, seededRandom } from './landscape-geometry';
+import { LAKE, PEAK, RUNWAY, groundAt, heightAt, seededRandom } from './landscape-geometry';
 
 /** Pure, deterministic world layout: sea, roads, fuel bottles, treasure, vehicle spawns. */
 export const SEA_LEVEL = -3;
@@ -11,6 +11,9 @@ export const roadBZ = (x: number) => 70 + 18 * Math.sin(x / 55);
 export const ROAD_A = { from: 10, to: 485 };
 export const ROAD_B = { from: -420, to: 420 };
 export const ROAD_HALF = 3;
+export const onRunway = (x: number, z: number) => Math.abs(x - RUNWAY.x) < RUNWAY.halfLength && Math.abs(z - RUNWAY.z) < RUNWAY.halfWidth;
+/** Shared road/runway contact; roads follow the same triangulated ground. */
+export const surfaceAt = (x: number, z: number) => groundAt(x, z) + (onRunway(x, z) ? .04 : roadDist(x, z) < ROAD_HALF ? .04 : 0);
 
 /** Approximate distance to the nearest road centreline. */
 export function roadDist(x: number, z: number) {
@@ -34,11 +37,13 @@ export function makeRoadGeometry() {
   for (const path of roadPaths()) {
     const base = pos.length / 3;
     path.forEach(([x, z], i) => {
-      const [px, pz] = path[Math.max(0, i - 1)]!, [nx, nz] = path[Math.min(path.length - 1, i + 1)]!;
+      const previous = path[Math.max(0, i - 1)], next = path[Math.min(path.length - 1, i + 1)];
+      if (!previous || !next) return;
+      const [px, pz] = previous, [nx, nz] = next;
       const dx = nx - px, dz = nz - pz, l = Math.hypot(dx, dz) || 1, rx = -dz / l, rz = dx / l;
       for (const s of [-1, 0, 1]) {
         const vx = x + rx * ROAD_HALF * s, vz = z + rz * ROAD_HALF * s;
-        pos.push(vx, Math.max(heightAt(vx, vz), heightAt(x, z) - .4) + .14, vz); uv.push((s + 1) / 2, i * .5);
+        pos.push(vx, groundAt(vx, vz) + .04, vz); uv.push((s + 1) / 2, i * .5);
       }
       if (i < path.length - 1) { const v = base + i * 3; idx.push(v, v + 3, v + 1, v + 1, v + 3, v + 4, v + 1, v + 4, v + 2, v + 2, v + 4, v + 5); }
     });
@@ -52,11 +57,13 @@ export function makeRoadGeometry() {
 
 export function makeRoadTexture() {
   const c = document.createElement('canvas'); c.width = 64; c.height = 64;
-  const ctx = c.getContext('2d')!;
-  ctx.fillStyle = '#6b6b6b'; ctx.fillRect(0, 0, 64, 64);
+  const ctx = c.getContext('2d'); if (!ctx) return new THREE.Texture();
+  const css = getComputedStyle(document.documentElement);
+  ctx.fillStyle = css.getPropertyValue('--scene-road').trim(); ctx.fillRect(0, 0, 64, 64);
   const r = seededRandom(5);
-  for (let i = 0; i < 400; i++) { const v = 90 + r() * 70; ctx.fillStyle = `rgb(${v},${v},${v})`; ctx.fillRect(r() * 64, r() * 64, 1, 1); }
-  ctx.fillStyle = '#e8e2c8'; ctx.fillRect(30, 0, 4, 32); ctx.fillRect(0, 0, 3, 64); ctx.fillRect(61, 0, 3, 64);
+  ctx.fillStyle = css.getPropertyValue('--scene-foam').trim(); ctx.globalAlpha = .12;
+  for (let i = 0; i < 400; i++) ctx.fillRect(r() * 64, r() * 64, 1, 1);
+  ctx.globalAlpha = 1; ctx.fillRect(30, 0, 4, 32); ctx.fillRect(0, 0, 3, 64); ctx.fillRect(61, 0, 3, 64);
   const t = new THREE.CanvasTexture(c); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.colorSpace = THREE.SRGBColorSpace;
   return t;
 }
@@ -108,7 +115,7 @@ export const CAR_GEAR = 0;
 
 export function placeVehicle(v: Vehicle) {
   const [x, z, yaw] = v.spawn;
-  v.pos.set(x, heightAt(x, z) + (v.type === 'plane' ? PLANE_GEAR : CAR_GEAR), z); v.yaw = yaw;
+  v.pos.set(x, surfaceAt(x, z) + (v.type === 'plane' ? PLANE_GEAR : CAR_GEAR), z); v.yaw = yaw;
   v.speed = 0; v.vy = 0; v.pitch = 0; v.roll = 0; v.throttle = 0; v.health = 100;
 }
 

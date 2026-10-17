@@ -3,11 +3,11 @@ import { Environment, Lightformer } from '@react-three/drei';
 import { useFrame } from '@react-three/fiber';
 import * as THREE from 'three';
 import { Player, FollowCamera, type GameState, type CharacterKind } from './Explorer';
-import { PEAK, heightAt, makeGrassTexture, makeMountains, makeTree } from '@/lib/landscape-geometry';
+import { PEAK, heightAt, makeGrassTexture, makeTree, seededRandom } from '@/lib/landscape-geometry';
 import { WIND } from '@/lib/game-world';
 import { Vehicles } from './Vehicles';
 import { WorldFeatures } from './WorldFeatures';
-import { CHUNK_RADIUS, CHUNK_SIZE, makeChunk } from '@/lib/world-chunks';
+import { CHUNK_RADIUS, CHUNK_SIZE, makeChunk, makeFarTerrain } from '@/lib/world-chunks';
 
 export type LandscapePalette = Record<'sky' | 'mist' | 'grass' | 'grassLight' | 'forest' | 'mountain' | 'leaf' | 'leafLight' | 'bark' | 'sun' | 'toySkin' | 'toyShirt' | 'toyPants' | 'toyHat' | 'bird' | 'birdWing' | 'sand' | 'water' | 'waterDeep' | 'foam' | 'road' | 'car' | 'plane' | 'fuel' | 'gold', THREE.Color>;
 
@@ -44,8 +44,12 @@ function ChunkWorld({ palette, game, texture }: { palette: LandscapePalette; gam
   const cache = useRef(new Map<string, Chunk>());
   const [chunks, setChunks] = useState<Chunk[]>([]);
   const center = useRef('');
+  const [farCenter, setFarCenter] = useState<[number, number]>([0, 0]);
+  const far = useMemo(() => makeFarTerrain(farCenter[0], farCenter[1], palette), [farCenter, palette]);
+  useEffect(() => () => far.dispose(), [far]);
   useFrame(() => {
     const cx = Math.round(game.pos.x / CHUNK_SIZE), cz = Math.round(game.pos.z / CHUNK_SIZE);
+    if (farCenter[0] !== cx || farCenter[1] !== cz) setFarCenter([cx, cz]);
     const wanted: [number, number][] = [];
     for (let x = -CHUNK_RADIUS; x <= CHUNK_RADIUS; x++) for (let z = -CHUNK_RADIUS; z <= CHUNK_RADIUS; z++) wanted.push([cx + x, cz + z]);
     wanted.sort((a, b) => Math.hypot(a[0] - cx, a[1] - cz) - Math.hypot(b[0] - cx, b[1] - cz));
@@ -61,13 +65,13 @@ function ChunkWorld({ palette, game, texture }: { palette: LandscapePalette; gam
     let removed = false;
     for (const [key, c] of map) if (!keys.has(key)) {
       const [x, z] = key.split(',').map(Number);
-      if (Math.max(Math.abs(x! - cx), Math.abs(z! - cz)) > CHUNK_RADIUS + 1) { c.terrain.dispose(); c.deco?.dispose(); map.delete(key); removed = true; }
+      if (x !== undefined && z !== undefined && Math.max(Math.abs(x - cx), Math.abs(z - cz)) > CHUNK_RADIUS + 1) { c.terrain.dispose(); c.deco?.dispose(); map.delete(key); removed = true; }
     }
     const sig = `${cx},${cz},${map.size}`;
     if (built || removed || sig !== center.current) { center.current = sig; setChunks([...map.values()]); }
   });
   useEffect(() => () => { cache.current.forEach(c => { c.terrain.dispose(); c.deco?.dispose(); }); cache.current.clear(); }, [palette]);
-  return <>{chunks.map(c => <group key={c.key}>
+  return <><mesh geometry={far} receiveShadow><meshStandardMaterial vertexColors roughness={1} /></mesh>{chunks.map(c => <group key={c.key}>
     <mesh geometry={c.terrain} receiveShadow><meshStandardMaterial vertexColors map={texture} roughness={1} bumpMap={texture} bumpScale={.12} /></mesh>
     {c.deco && <mesh geometry={c.deco} castShadow receiveShadow><meshStandardMaterial vertexColors roughness={.95} flatShading /></mesh>}
   </group>)}</>;
@@ -86,14 +90,12 @@ function FollowWorld({ game, children, sun }: { game: GameState; children: React
 
 function Atmosphere({ palette, game }: { palette: LandscapePalette; game: GameState }) {
   const sun = useRef<THREE.DirectionalLight>(null);
-  const mountains = useMemo(() => [makeMountains(430, 70, 11), makeMountains(520, 95, 88), makeMountains(610, 120, 65)], []);
-  useEffect(() => () => mountains.forEach(m => m.dispose()), [mountains]);
   const sky = useMemo(() => {
     const geo = new THREE.SphereGeometry(650, 32, 16);
     const p = geo.getAttribute('position'), colors: number[] = [];
     for (let i = 0; i < p.count; i++) {
       const blend = THREE.MathUtils.smoothstep(p.getY(i) / 650, -.08, .32);
-      palette.mist.clone().lerp(palette.sky, blend).toArray(colors, i * 3);
+      palette.sky.clone().lerp(palette.mist, (1 - blend) * .22).toArray(colors, i * 3);
     }
     geo.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
     return geo;
@@ -102,9 +104,7 @@ function Atmosphere({ palette, game }: { palette: LandscapePalette; game: GameSt
   return <>
     <FollowWorld game={game} sun={sun}>
       <mesh geometry={sky}><meshBasicMaterial vertexColors side={THREE.BackSide} fog={false} depthWrite={false} /></mesh>
-      {mountains.map((geometry, i) => <mesh key={i} geometry={geometry}>
-        <meshBasicMaterial color={palette.mountain.clone().lerp(palette.mist, .12 + i * .06)} fog={false} side={THREE.DoubleSide} />
-      </mesh>)}
+      <mesh position={[-300, 320, -220]}><sphereGeometry args={[12, 16, 12]} /><meshBasicMaterial color={palette.sun} /></mesh>
     </FollowWorld>
     <Snow palette={palette} />
     <hemisphereLight args={[palette.mist, palette.forest, .9]} />
@@ -124,8 +124,8 @@ function Snow({ palette }: { palette: LandscapePalette }) {
   const COUNT = 500;
   const ref = useRef<THREE.Points>(null);
   const geo = useMemo(() => {
-    const g = new THREE.BufferGeometry(), pos = new Float32Array(COUNT * 3);
-    for (let i = 0; i < COUNT; i++) pos.set([PEAK.x + (Math.random() - .5) * 260, Math.random() * 190, PEAK.z + (Math.random() - .5) * 260], i * 3);
+    const g = new THREE.BufferGeometry(), pos = new Float32Array(COUNT * 3), r = seededRandom(726);
+    for (let i = 0; i < COUNT; i++) pos.set([PEAK.x + (r() - .5) * 180, 150 + r() * 60, PEAK.z + (r() - .5) * 180], i * 3);
     g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
     return g;
   }, []);
@@ -135,7 +135,7 @@ function Snow({ palette }: { palette: LandscapePalette }) {
     for (let i = 0; i < COUNT; i++) {
       let y = p.getY(i) - (6 + (i % 5)) * dt;
       const x = p.getX(i) + Math.sin(WIND.angle) * WIND.speed * .5 * dt, z = p.getZ(i) + Math.cos(WIND.angle) * WIND.speed * .5 * dt;
-      if (y < heightAt(x, z)) y = 150 + Math.random() * 40;
+      if (y < Math.max(100, heightAt(x, z))) y = 200;
       p.setXYZ(i, x > PEAK.x + 130 ? x - 260 : x < PEAK.x - 130 ? x + 260 : x, y, z > PEAK.z + 130 ? z - 260 : z < PEAK.z - 130 ? z + 260 : z);
     }
     p.needsUpdate = true;

@@ -99,7 +99,7 @@
   --scene-bird: oklch(0.55 0.15 240);
   --scene-bird-wing: oklch(0.4 0.12 250);
   --scene-sand: oklch(0.84 0.07 85);
-  --scene-water: oklch(0.55 0.11 225);
+  --scene-water: oklch(0.58 0.16 239);
   --scene-water-deep: oklch(0.38 0.11 250);
   --scene-foam: oklch(0.94 0.025 220);
   --scene-road: oklch(0.5 0.01 80);
@@ -231,3 +231,40 @@
 .game-toast { position: absolute; left: 50%; top: 30px; transform: translateX(-50%); padding: 8px 14px; border-radius: 999px; background: var(--overlay); border: 1px solid var(--overlay-border); backdrop-filter: blur(16px); font-size: 12px; pointer-events: none; white-space: nowrap; }
 .underwater-tint { position: absolute; inset: 0; pointer-events: none; background: color-mix(in oklch, var(--scene-water) 45%, transparent); }
 @media (max-width: 640px) { .nav-hud { top: 70px; right: 12px; } .minimap { width: 110px; height: 110px; } .quest-card { max-width: 150px; } .gauge-card { left: 12px; bottom: 150px; width: 180px; } .game-toast { top: 12px; white-space: normal; width: 80%; text-align: center; } }
+.health-card { position: absolute; left: 42px; top: 305px; width: 240px; padding: 10px 12px; border: 1px solid var(--overlay-border); border-radius: 8px; background: var(--overlay); backdrop-filter: blur(12px); font-size: 11px; pointer-events: none; }
+.health-bar { margin-top: 5px; }
+.health-bar i { background: var(--primary); }
+.wind-readout { color: var(--scene-foam); margin-top: 3px; }
+.quest-card { line-height: 1.5; }
+.landscape-caption { display: none; }
+.game-toast { max-width: 400px; white-space: normal; text-align: center; top: 22px; }
+@media (max-width: 640px) {
+  .landscape-header { top: 16px; left: 14px; }
+  .landscape-brand h1 { font-size: 16px; }
+  .landscape-header p { display: none; }
+  .game-hud { top: 60px; left: 12px; right: auto; max-width: 204px; padding: 8px; }
+  .game-hud .row { flex-wrap: wrap; }
+  .game-hud button { padding-inline: 8px; font-size: 11px; }
+  .health-card { left: 12px; top: 152px; width: 180px; }
+  .nav-hud { top: 54px; }
+  .compass { width: 66px; height: 66px; }
+  .quest-card { max-width: 142px; font-size: 10px; }
+  .gauge-card { left: 12px; top: 205px; bottom: auto; width: 180px; font-size: 10px; }
+  .touch-buttons { right: 15px; bottom: 105px; gap: 7px; }
+  .touch-buttons button { width: 54px; height: 54px; }
+  .joystick { left: 18px; bottom: 115px; }
+  .landscape-bottom { bottom: 12px; gap: 8px; }
+  .landscape-instructions { max-width: 94%; text-align: center; }
+  .game-toast { top: auto; bottom: 265px; width: 80%; }
+}
+@media (max-height: 600px) {
+  .landscape-header, .game-hud .hint, .quest-card .muted { display: none; }
+  .game-hud { top: 12px; }
+  .health-card { top: 110px; }
+  .nav-hud { top: 10px; }
+  .compass { display: none; }
+  .minimap { width: 90px; height: 90px; }
+  .touch-buttons { flex-direction: row; bottom: 90px; }
+  .joystick { bottom: 90px; }
+  .gauge-card { top: 165px; bottom: auto; }
+}
