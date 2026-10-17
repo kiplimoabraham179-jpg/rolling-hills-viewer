@@ -1,3 +1,7 @@
 - [x] Create procedural terrain, dimensional tree, forest, mountain ridges, and sunlight.
 - [x] Add camera controls, accessible toolbar, loading and WebGL recovery.
 - [x] Verify scene and interactions on desktop and mobile.
+- [ ] Finish seven-level HUD, hidden treasure progression, health, wind and recovery.
+- [ ] Unify terrain/road/runway contact and improve swept obstacle/vehicle collisions.
+- [ ] Improve reachable distant terrain, biome details, blue water and clear sky.
+- [ ] Run gameplay tests and desktop/mobile preview checks; record verification limits.
