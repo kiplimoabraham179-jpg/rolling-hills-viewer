@@ -7,6 +7,7 @@ import type { GameState } from './Explorer';
 import type { LandscapePalette } from './LandscapeScene';
 import { say, vehicleCap } from './Vehicles';
 import { sfx } from '@/lib/sfx';
+import { activeTreasure, advanceQuest } from '@/lib/adventure-rules';
 
 function Roads() {
   const geo = useMemo(makeRoadGeometry, []), tex = useMemo(makeRoadTexture, []);
@@ -14,11 +15,23 @@ function Roads() {
   return <mesh geometry={geo} receiveShadow><meshStandardMaterial map={tex} roughness={.95} polygonOffset polygonOffsetFactor={-2} /></mesh>;
 }
 
+function Airfield({ palette }: { palette: LandscapePalette }) {
+  return <group position={[RUNWAY.x, RUNWAY.h + .04, RUNWAY.z]}>
+    <mesh rotation-x={-Math.PI / 2} receiveShadow><planeGeometry args={[RUNWAY.halfLength * 2, RUNWAY.halfWidth * 2]} /><meshStandardMaterial color={palette.road} roughness={.95} /></mesh>
+    {Array.from({ length: 12 }, (_, i) => <mesh key={i} rotation-x={-Math.PI / 2} position={[-55 + i * 10, .008, 0]}><planeGeometry args={[5, .5]} /><meshBasicMaterial color={palette.foam} /></mesh>)}
+    {[-1, 1].map(side => <group key={side}>
+      <mesh rotation-x={-Math.PI / 2} position={[0, .008, side * 8]}><planeGeometry args={[136, .3]} /><meshBasicMaterial color={palette.foam} /></mesh>
+      {[-5, -3, -1, 1, 3, 5].map(z => <mesh key={z} rotation-x={-Math.PI / 2} position={[side * 62, .009, z]}><planeGeometry args={[5, .8]} /><meshBasicMaterial color={palette.foam} /></mesh>)}
+    </group>)}
+    <mesh rotation-x={-Math.PI / 2} position={[45, -.01, 19]} receiveShadow><planeGeometry args={[38, 20]} /><meshStandardMaterial color={palette.road} roughness={1} /></mesh>
+  </group>;
+}
+
 /** Saturated blue water with wind-driven ripples: one sea sheet plus the lake disc. */
 function Water({ game, palette }: { game: GameState; palette: LandscapePalette }) {
   const sea = useRef<THREE.Mesh>(null), lake = useRef<THREE.Mesh>(null);
   const seaGeo = useMemo(() => { const g = new THREE.PlaneGeometry(2400, 1600, 72, 48); g.rotateX(-Math.PI / 2); return g; }, []);
-  const lakeGeo = useMemo(() => { const g = new THREE.CircleGeometry(LAKE.r + 14, 40, 0, Math.PI * 2); g.rotateX(-Math.PI / 2); return g; }, []);
+  const lakeGeo = useMemo(() => { const g = new THREE.PlaneGeometry(170, 170, 32, 32); g.rotateX(-Math.PI / 2); return g; }, []);
   useEffect(() => () => { seaGeo.dispose(); lakeGeo.dispose(); }, [seaGeo, lakeGeo]);
   useFrame(({ clock }) => {
     const t = clock.elapsedTime, m = sea.current;
@@ -32,13 +45,15 @@ function Water({ game, palette }: { game: GameState; palette: LandscapePalette }
       }
       p.needsUpdate = true; seaGeo.computeVertexNormals();
     }
-    if (lake.current) lake.current.position.y = SEA_LEVEL + .05 + Math.sin(t * 1.4) * .05;
+    const lp = lakeGeo.getAttribute('position');
+    for (let i = 0; i < lp.count; i++) lp.setY(i, Math.sin(lp.getX(i) * .3 + t) * .045 + Math.cos(lp.getZ(i) * .25 - t) * .035);
+    lp.needsUpdate = true; lakeGeo.computeVertexNormals();
   });
-  const waterMat = <meshStandardMaterial color={palette.water} emissive={palette.waterDeep} emissiveIntensity={.35} transparent opacity={.82} roughness={.12} metalness={.25} side={THREE.DoubleSide} depthWrite={false} />;
+  const waterMat = <meshStandardMaterial color={palette.water} emissive={palette.waterDeep} emissiveIntensity={.45} transparent opacity={.88} roughness={.24} metalness={.08} side={THREE.DoubleSide} />;
   return <>
     <mesh ref={sea} geometry={seaGeo} position={[0, SEA_LEVEL, 1180]}>{waterMat}</mesh>
     <mesh ref={lake} geometry={lakeGeo} position={[LAKE.x, SEA_LEVEL + .05, LAKE.z]}>
-      <meshStandardMaterial color={palette.water} emissive={palette.waterDeep} emissiveIntensity={.3} transparent opacity={.8} roughness={.15} metalness={.2} depthWrite={false} />
+      {waterMat}
     </mesh>
   </>;
 }
@@ -70,7 +85,7 @@ function Clouds({ game, palette }: { game: GameState; palette: LandscapePalette 
     const dt = Math.min(raw, .05), g = group.current; if (!g) return;
     const wx = Math.sin(WIND.angle) * WIND.speed, wz = Math.cos(WIND.angle) * WIND.speed;
     g.children.forEach((c, i) => {
-      const s = seeds[i]!;
+      const s = seeds[i]; if (!s) return;
       c.position.x += wx * dt * 1.6; c.position.z += wz * dt * 1.6;
       // wrap in a 700-unit box around the player
       if (c.position.x - game.pos.x > 350) c.position.x -= 700; if (c.position.x - game.pos.x < -350) c.position.x += 700;
@@ -125,25 +140,18 @@ function FuelBottles({ game, palette }: { game: GameState; palette: LandscapePal
 function Treasure({ game, palette }: { game: GameState; palette: LandscapePalette }) {
   const chest = useRef<THREE.Group>(null), beacon = useRef<THREE.Mesh>(null);
   const home = useMemo(() => new THREE.Vector3(3.5, heightAt(3.5, 3.5), 3.5), []);
-  const target = useMemo(() => {
-    const t = treasureAt(game.treasureIdx); t.pos.y = heightAt(t.pos.x, t.pos.z); return t;
-  }, [game.treasureIdx]);
   useFrame(({ clock }) => {
     const g = game, c = chest.current; if (!c) return;
-    const tp = target.pos;
-    // discovery: the treasure only appears on the map once you get close
-    if (g.quest === 'find' && !g.discovered && Math.hypot(tp.x - g.pos.x, tp.z - g.pos.z) < 55) {
-      g.discovered = true; sfx.discover(); say(g, 'You spotted something shiny! Check the map', 4);
-    }
-    if (g.quest === 'find' && g.pos.distanceTo(tp) < 3) {
-      g.quest = 'carry'; sfx.pickup(); say(g, `Treasure ${g.treasureIdx + 1} found! Bring it back to the golden tree`, 5);
-    }
-    if (g.quest === 'carry' && Math.hypot(g.pos.x, g.pos.z) < HOME_RADIUS) {
-      g.deposited++; g.tankBonus += 5; g.health = 100;
+    const event = advanceQuest(g);
+    const tp = activeTreasure(g.treasureIdx).pos;
+    if (event === 'discover') { sfx.discover(); say(g, 'You spotted something shiny! Check the map', 4); }
+    if (event === 'pickup') { sfx.pickup(); say(g, `Treasure ${g.treasureIdx + 1} found! Bring it back to the golden tree`, 5); }
+    if (event === 'deposit' || event === 'complete') {
+      g.tankBonus += 5; g.health = 100;
       g.vehicles.forEach(v => { v.fuel = vehicleCap(g, v); });
-      if (g.deposited >= LEVELS) { g.quest = 'done'; sfx.levelup(); say(g, 'All 7 treasures are home — you finished the whole adventure!', 8); }
+      if (event === 'complete') { sfx.levelup(); say(g, 'All 7 treasures are home — you finished the whole adventure!', 8); }
       else {
-        g.quest = 'find'; g.treasureIdx++; g.discovered = false; sfx.deposit();
+        sfx.deposit();
         say(g, `Level ${g.deposited} complete! Level ${g.deposited + 1}: ${treasureAt(g.treasureIdx).hint}`, 8);
       }
     }
@@ -175,7 +183,7 @@ function HeadingProbe({ game }: { game: GameState }) {
 export function WorldFeatures({ game, palette }: { game: GameState; palette: LandscapePalette }) {
   useFrame(({ clock }) => updateWind(clock.elapsedTime));
   return <>
-    <Roads /><Water game={game} palette={palette} /><Windsock palette={palette} /><Clouds game={game} palette={palette} />
+    <Roads /><Airfield palette={palette} /><Water game={game} palette={palette} /><Windsock palette={palette} /><Clouds game={game} palette={palette} />
     <FuelBottles game={game} palette={palette} /><Treasure game={game} palette={palette} /><HeadingProbe game={game} />
   </>;
 }
