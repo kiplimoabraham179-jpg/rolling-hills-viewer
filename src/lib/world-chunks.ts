@@ -29,16 +29,16 @@ function colorAt(x: number, z: number, y: number, c: ChunkColors, out: THREE.Col
   out.copy(c.grass).lerp(c.grassLight, .22 + .18 * Math.sin(x * .13 + z * .05));
   out.lerp(c.forest, forestAt(x, z) * .75);
   out.lerp(c.mountain, THREE.MathUtils.smoothstep(y, 26, 48) * .85);
-  out.lerp(c.sun, THREE.MathUtils.smoothstep(y, 95, 125) * .9); // snow caps
+  out.lerp(c.foam, THREE.MathUtils.smoothstep(y, 95, 125) * .9); // snow caps
   out.lerp(c.sand, 1 - THREE.MathUtils.smoothstep(y, SEA_LEVEL + .8, SEA_LEVEL + 3));
   // underwater: shallows turn turquoise, depths deep blue; a pale foam line marks the shore
   const depth = SEA_LEVEL - y;
   if (depth > 0) out.lerp(c.water, THREE.MathUtils.smoothstep(depth, 0, 2.5) * .7).lerp(c.waterDeep, THREE.MathUtils.smoothstep(depth, 2, 12) * .85);
-  out.lerp(c.foam, Math.max(0, 1 - Math.abs(depth) / .45) * .55);
+  out.lerp(c.sand, Math.max(0, 1 - Math.abs(depth) / .65) * .35);
   return out;
 }
 
-export type Item = { kind: 'pine' | 'rock' | 'flower'; x: number; y: number; z: number; sx: number; sy: number; sz: number; ry: number; tint: number };
+export type Item = { kind: 'pine' | 'broadleaf' | 'shrub' | 'grass' | 'log' | 'rock' | 'flower'; x: number; y: number; z: number; sx: number; sy: number; sz: number; ry: number; tint: number };
 export type Obstacle = { x: number; z: number; r: number; bottom: number; top: number; kind: 'tree' | 'rock' };
 const itemCache = new Map<string, Item[]>(), obstacleCache = new Map<string, Obstacle[]>();
 
@@ -52,12 +52,16 @@ export function chunkItems(cx: number, cz: number): Item[] {
     if (d < 14 || y < SEA_LEVEL + 1 || roadDist(x, z) < ROAD_CLEAR || runwayWeight(x, z) > .02) continue; // clear hill, roads, airfield
     if (y < 40 && r < f * .75) {
       const h = 2 + random() * 3.6, w = .8 + random() * .8;
-      out.push({ kind: 'pine', x, y: y - .15, z, sx: w, sy: h, sz: w, ry: random() * 6, tint: random() * .25 });
+      const kind = random() < .3 ? 'broadleaf' : 'pine';
+      if (out.some(it => (it.kind === 'pine' || it.kind === 'broadleaf') && Math.hypot(it.x - x, it.z - z) < it.sx + w + .7)) continue;
+      out.push({ kind, x, y, z, sx: w, sy: h, sz: w, ry: random() * 6, tint: random() * .55 });
     } else if (r > .93) {
       const s = .3 + random() * (y > 26 ? 1.6 : .7);
       out.push({ kind: 'rock', x, y, z, sx: s * 1.3, sy: s * .8, sz: s, ry: random() * 6, tint: random() * .3 });
     } else if (r > .86 && f < .4 && y < 26) {
       out.push({ kind: 'flower', x, y: y + .2, z, sx: 1, sy: 1, sz: 1, ry: 0, tint: random() > .5 ? 1 : 0 });
+    } else if (r > .78 && y < 40) {
+      out.push({ kind: f > .55 ? 'shrub' : 'grass', x, y, z, sx: .5 + random() * .4, sy: .5 + random() * .5, sz: .5, ry: random() * 6, tint: random() });
     }
   }
   if (itemCache.size > 300) itemCache.clear();
@@ -69,8 +73,8 @@ function chunkObstacles(cx: number, cz: number): Obstacle[] {
   const key = `${cx},${cz}`, hit = obstacleCache.get(key); if (hit) return hit;
   const out: Obstacle[] = [];
   for (const it of chunkItems(cx, cz)) {
-    if (it.kind === 'pine') out.push({ kind: 'tree', x: it.x, z: it.z, r: Math.max(.45, it.sx * .5), bottom: it.y, top: it.y + it.sy });
-    else if (it.kind === 'rock' && it.sz > .55) out.push({ kind: 'rock', x: it.x, z: it.z, r: it.sx * .85, bottom: it.y - 1, top: it.y + it.sy * .9 });
+    if (it.kind === 'pine' || it.kind === 'broadleaf') out.push({ kind: 'tree', x: it.x, z: it.z, r: Math.max(.24, it.sx * .22), bottom: it.y, top: it.y + it.sy * 1.15 });
+    else if (it.kind === 'rock') out.push({ kind: 'rock', x: it.x, z: it.z, r: Math.max(it.sx, it.sz), bottom: it.y - .1, top: it.y + it.sy * 1.7 });
   }
   if (obstacleCache.size > 300) obstacleCache.clear();
   obstacleCache.set(key, out);
@@ -85,7 +89,7 @@ export function collideCircle(x: number, z: number, y: number, radius: number, h
   const ccx = Math.round(x / CHUNK_SIZE), ccz = Math.round(z / CHUNK_SIZE);
   const list: Obstacle[][] = [[{ ...GOLDEN_TREE, top: heightAt(0, 0) + 9 }]];
   for (let i = -1; i <= 1; i++) for (let j = -1; j <= 1; j++) list.push(chunkObstacles(ccx + i, ccz + j));
-  for (const arr of list) for (const o of arr) {
+  for (let pass = 0; pass < 4; pass++) for (const arr of list) for (const o of arr) {
     if (y > o.top - .15 || y + height < o.bottom) continue;
     const dx = res.x - o.x, dz = res.z - o.z, d = Math.hypot(dx, dz), min = o.r + radius;
     if (d >= min) continue;
@@ -93,6 +97,34 @@ export function collideCircle(x: number, z: number, y: number, radius: number, h
     res.x = o.x + nx * min; res.z = o.z + nz * min; res.hit = true; res.kind = o.kind;
   }
   return res;
+}
+
+/** Sample a swept motion in short intervals so fast vehicles cannot skip trunks. */
+export function sweepCircle(fromX: number, fromZ: number, x: number, z: number, y: number, radius: number, height: number): Contact {
+  const steps = Math.max(1, Math.ceil(Math.hypot(x - fromX, z - fromZ) / Math.max(.18, radius * .4)));
+  let px = fromX, pz = fromZ;
+  for (let i = 1; i <= steps; i++) {
+    const hit = collideCircle(fromX + (x - fromX) * i / steps, fromZ + (z - fromZ) * i / steps, y, radius, height);
+    if (hit.hit) return hit;
+    px = hit.x; pz = hit.z;
+  }
+  return { hit: false, x: px, z: pz };
+}
+
+/** Coarse reachable horizon: every vertex uses the very same infinite height field. */
+export function makeFarTerrain(cx: number, cz: number, colors: ChunkColors) {
+  const step = 20, half = 40, p: number[] = [], c: number[] = [], indices: number[] = [], tmp = new THREE.Color();
+  for (let z = -half; z <= half; z++) for (let x = -half; x <= half; x++) {
+    const wx = cx * CHUNK_SIZE + x * step, wz = cz * CHUNK_SIZE + z * step, y = heightAt(wx, wz);
+    p.push(wx, y - .35, wz); colorAt(wx, wz, y, colors, tmp).toArray(c, c.length);
+    if (x < half && z < half) {
+      // Leave a hole beneath the detailed chunk safety area.
+      if (Math.abs(x * step + step / 2) < 120 && Math.abs(z * step + step / 2) < 120) continue;
+      const i = (z + half) * (half * 2 + 1) + x + half;
+      indices.push(i, i + half * 2 + 1, i + 1, i + 1, i + half * 2 + 1, i + half * 2 + 2);
+    }
+  }
+  const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(p, 3)); g.setAttribute('color', new THREE.Float32BufferAttribute(c, 3)); g.setIndex(indices); g.computeVertexNormals(); return g;
 }
 
 export function makeChunk(cx: number, cz: number, colors: ChunkColors) {
@@ -129,9 +161,18 @@ export function makeChunk(cx: number, cz: number, colors: ChunkColors) {
     parts.push(geo);
   };
   for (const it of chunkItems(cx, cz)) {
-    if (it.kind === 'pine') add(new THREE.ConeGeometry(1, 1, 5), colors.forest.clone().lerp(colors.grass, it.tint), it, it.sy * .5);
-    else if (it.kind === 'rock') add(new THREE.DodecahedronGeometry(1, 0), colors.mountain.clone().lerp(colors.mist, it.tint), it, it.sz * .3);
-    else add(new THREE.IcosahedronGeometry(.18, 0), it.tint ? colors.sun : colors.leafLight, it, 0);
+    if (it.kind === 'pine' || it.kind === 'broadleaf') {
+      add(new THREE.CylinderGeometry(.1, .2, .6, 6), colors.bark, it, it.sy * .3);
+      const leaf = colors.forest.clone().lerp(colors.grassLight, it.tint);
+      if (it.kind === 'pine') {
+        add(new THREE.ConeGeometry(1, .75, 7), leaf, it, it.sy * .52);
+        add(new THREE.ConeGeometry(.75, .6, 7), leaf.clone().lerp(colors.grassLight, .12), it, it.sy * .8);
+      } else add(new THREE.IcosahedronGeometry(1, 1).scale(1.4, .48, 1.2), leaf, it, it.sy * .75);
+    } else if (it.kind === 'rock') add(new THREE.DodecahedronGeometry(1, 0), colors.mountain.clone().lerp(colors.mist, it.tint), it, it.sy * .75);
+    else if (it.kind === 'shrub') add(new THREE.IcosahedronGeometry(.8, 1), colors.grass.clone().lerp(colors.forest, .4), it, it.sy * .5);
+    else if (it.kind === 'grass') {
+      for (let blade = 0; blade < 3; blade++) add(new THREE.ConeGeometry(.08, .8, 3).rotateZ((blade - 1) * .3), colors.grassLight, it, it.sy * .4);
+    } else add(new THREE.IcosahedronGeometry(.18, 0), it.tint ? colors.sun : colors.leafLight, it, 0);
   }
   const deco = parts.length ? mergeGeometries(parts) : null;
   parts.forEach(g => g.dispose());
