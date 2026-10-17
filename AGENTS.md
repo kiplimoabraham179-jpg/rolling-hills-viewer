@@ -12,4 +12,5 @@
 - Keep landscape geometry in a pure, seeded generation module and use instancing/merged meshes for repeated elements to limit draw calls.
 - Mount the WebGL experience through a client-only lazy boundary so browser rendering does not run during SSR.
 - Resolve Three.js material colors from the global semantic CSS palette so the scene and interface share one design system.
-- Open-world terrain streams as deterministic chunks (src/lib/world-chunks.ts) around the player from the infinite heightAt; collision always uses heightAt so no gaps can exist.
+- Open-world detail chunks and coarse horizon share infinite seeded heightAt; contact uses groundAt triangle interpolation and surfaceAt road/runway offsets so rendering and grounding agree.
+- Treasure transitions and marker eligibility live in pure adventure-rules, shared by scene, HUD and tests; mutable game state is polled by HUD rather than used as a React memo dependency.

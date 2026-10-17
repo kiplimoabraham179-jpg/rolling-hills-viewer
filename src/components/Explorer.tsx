@@ -3,9 +3,9 @@ import { useFrame, useThree } from '@react-three/fiber';
 import * as THREE from 'three';
 import { groundAt } from '@/lib/landscape-geometry';
 import type { LandscapePalette } from './LandscapeScene';
-import { HOME_RADIUS, SEA_LEVEL, WIND, createVehicles, type Vehicle } from '@/lib/game-world';
+import { HOME_RADIUS, RUNWAY, SEA_LEVEL, WIND, surfaceAt, createVehicles, type Vehicle } from '@/lib/game-world';
 import { sfx } from '@/lib/sfx';
-import { collideCircle } from '@/lib/world-chunks';
+import { sweepCircle } from '@/lib/world-chunks';
 import { hurtPlayer, say } from './game-rules';
 
 export type CharacterKind = 'toy' | 'bird';
@@ -15,7 +15,7 @@ export type GameState = {
   camYaw: number; camPitch: number; camDist: number;
   mode: 'foot' | 'vehicle'; vid: number; vehicles: Vehicle[]; tankBonus: number; collected: boolean[];
   quest: 'find' | 'carry' | 'done'; treasureIdx: number; deposited: number; discovered: boolean;
-  health: number; hurtAt: number;
+  health: number; hurtAt: number; checkpoint: THREE.Vector3;
   message: string; messageUntil: number; heading: number; camUnder: boolean; lastDrag: number;
 };
 
@@ -26,17 +26,17 @@ export const SPAWN = new THREE.Vector3(7, 0, 14);
 
 /** Highest ground under a small footprint so feet never dip into a slope. */
 export const footGround = (x: number, z: number, r: number) =>
-  Math.max(groundAt(x, z), groundAt(x + r, z), groundAt(x - r, z), groundAt(x, z + r), groundAt(x, z - r));
+  Math.max(surfaceAt(x, z), surfaceAt(x + r, z), surfaceAt(x - r, z), surfaceAt(x, z + r), surfaceAt(x, z - r)) + .015;
 
 export function createGame(): GameState {
   return { keys: new Set(), joy: { x: 0, y: 0 }, jumpHeld: false, downHeld: false, pos: SPAWN.clone().setY(footGround(SPAWN.x, SPAWN.z, .25)),
     vel: new THREE.Vector3(), yaw: Math.PI, grounded: true, camYaw: 0, camPitch: .32, camDist: 9,
     mode: 'foot', vid: -1, vehicles: createVehicles(), tankBonus: 0, collected: [], quest: 'find', treasureIdx: 0, deposited: 0, discovered: false,
-    health: 100, hurtAt: 0, message: '', messageUntil: 0, heading: 0, camUnder: false, lastDrag: 0 };
+    health: 100, hurtAt: -1000, checkpoint: SPAWN.clone(), message: '', messageUntil: 0, heading: 0, camUnder: false, lastDrag: 0 };
 }
 export function respawn(g: GameState, kind: CharacterKind) {
   g.mode = 'foot'; g.vid = -1;
-  g.pos.copy(SPAWN).setY(footGround(SPAWN.x, SPAWN.z, .25) + (kind === 'bird' ? 4 : 0)); g.vel.set(0, 0, 0); g.yaw = Math.PI; g.camYaw = 0; g.camPitch = .32;
+  g.pos.copy(g.checkpoint).setY(footGround(g.checkpoint.x, g.checkpoint.z, .25) + (kind === 'bird' ? 4 : 0)); g.vel.set(0, 0, 0); g.yaw = Math.PI; g.camYaw = 0; g.camPitch = .32; g.health = 100; g.grounded = true;
 }
 
 export function readInput(g: GameState) {
@@ -63,6 +63,7 @@ export function Player({ game, kind, palette }: { game: GameState; kind: Charact
     const hidden = g.mode === 'vehicle';
     if (root.current) root.current.visible = !hidden; if (shadow.current) shadow.current.visible = !hidden;
     if (hidden) { g.vel.set(0, 0, 0); return; }
+    const ox = g.pos.x, oz = g.pos.z;
     const swim = kind === 'toy' && g.pos.y < SEA_LEVEL - .8;
     const s = Math.sin(g.camYaw), c = Math.cos(g.camYaw);
     // camera-relative: forward = away from camera, right = camera right
@@ -95,12 +96,19 @@ export function Player({ game, kind, palette }: { game: GameState; kind: Charact
     // open world: terrain is streamed in chunks, no hard boundary
     if (!Number.isFinite(g.pos.x) || !Number.isFinite(g.pos.z)) g.pos.copy(SPAWN);
     // trees and rocks: push out of their collision cylinders, bumps at speed cost health
-    const hit = collideCircle(g.pos.x, g.pos.z, g.pos.y + (kind === 'bird' ? .5 : 0), kind === 'bird' ? .55 : .42, kind === 'bird' ? 1.2 : 2.2);
+    const hit = sweepCircle(ox, oz, g.pos.x, g.pos.z, g.pos.y + (kind === 'bird' ? .5 : 0), kind === 'bird' ? .55 : .42, kind === 'bird' ? 1.2 : 2.4);
     if (hit.hit) {
       g.pos.x = hit.x; g.pos.z = hit.z; g.vel.x *= .25; g.vel.z *= .25;
       if (preHs > BUMP_SPEED) hurtPlayer(g, preHs * BUMP_DAMAGE, hit.kind === 'rock' ? 'Ouch, a rock!' : 'Bonk, a tree!');
     }
     // terrain following on the exact rendered surface
+    // Grounded explorers slide back from cliffs rather than teleporting uphill.
+    if (kind === 'toy' && g.grounded && footGround(g.pos.x, g.pos.z, .22) - footGround(ox, oz, .22) > Math.hypot(g.pos.x - ox, g.pos.z - oz) * 1.2 + .1) { g.pos.x = ox; g.pos.z = oz; g.vel.x *= .2; g.vel.z *= .2; }
+    for (const v of g.vehicles) {
+      if (Math.abs(v.pos.y - g.pos.y) > 2.5) continue;
+      const dx = g.pos.x - v.pos.x, dz = g.pos.z - v.pos.z, d = Math.hypot(dx, dz), r = v.type === 'plane' ? 3.6 : 1.8;
+      if (d < r) { g.pos.x = v.pos.x + (d > .001 ? dx / d : 1) * r; g.pos.z = v.pos.z + (d > .001 ? dz / d : 0) * r; }
+    }
     const minY = footGround(g.pos.x, g.pos.z, .22) + (kind === 'bird' ? 1.2 : 0);
     if (g.pos.y <= minY) {
       if (kind === 'toy' && !swim && g.vel.y < -SAFE_FALL) hurtPlayer(g, (-g.vel.y - SAFE_FALL) * FALL_DAMAGE, 'Hard landing!');
@@ -108,7 +116,8 @@ export function Player({ game, kind, palette }: { game: GameState; kind: Charact
     }
     else if (kind === 'toy' && g.grounded && g.pos.y - minY < .45 && g.vel.y <= 0) g.pos.y = minY; // stick to downhill slopes
     else g.grounded = kind === 'bird' ? false : g.pos.y - minY < .02;
-    if (kind === 'bird') g.pos.y = Math.min(g.pos.y, ground + 60);
+    if (kind === 'bird') g.pos.y = Math.min(g.pos.y, groundAt(g.pos.x, g.pos.z) + 60);
+    if (kind === 'toy' && g.grounded && Math.hypot(g.pos.x - RUNWAY.x, g.pos.z - RUNWAY.z) < 25 && g.checkpoint.x !== RUNWAY.x) { g.checkpoint.set(RUNWAY.x, RUNWAY.h, RUNWAY.z + 20); say(g, 'Airfield checkpoint! Your next recovery starts here', 4); }
     // health: heal at the golden tree, faint gracefully at zero
     if (Math.hypot(g.pos.x, g.pos.z) < HOME_RADIUS * 2 && g.health < 100) g.health = Math.min(100, g.health + HOME_HEAL * dt);
     if (g.health <= 0) { respawn(g, kind); g.health = 100; g.hurtAt = performance.now() + 1500; say(g, 'You fainted! Woke up safe beneath the golden tree', 4); }
@@ -126,7 +135,7 @@ export function Player({ game, kind, palette }: { game: GameState; kind: Charact
       if (legL.current) legL.current.rotation.x = air ? -.5 : sw; if (legR.current) legR.current.rotation.x = air ? .3 : -sw;
       if (armL.current) { armL.current.rotation.x = air ? -2.4 : -sw * .9; armL.current.rotation.z = .12; }
       if (armR.current) { armR.current.rotation.x = air ? -2.4 : sw * .9; armR.current.rotation.z = -.12; }
-      if (body.current) { body.current.position.y = g.grounded ? Math.abs(Math.cos(phase.current)) * .09 * moving + Math.sin(t * 2.2) * .02 * (1 - Math.min(moving, 1)) : 0;
+      if (body.current) { body.current.position.y = g.grounded ? Math.abs(Math.cos(phase.current)) * .09 * moving + (1 + Math.sin(t * 2.2)) * .01 * (1 - Math.min(moving, 1)) : 0;
         body.current.rotation.x = moving * .12; }
     } else {
       const flap = input.up ? 16 : hs > 1 ? 9 : 5;
@@ -178,8 +187,8 @@ export function FollowCamera({ game }: { game: GameState }) {
     const down = (e: PointerEvent) => { pts.set(e.pointerId, { x: e.clientX, y: e.clientY }); el.setPointerCapture(e.pointerId); };
     const move = (e: PointerEvent) => {
       const p = pts.get(e.pointerId); if (!p) return;
-      if (pts.size === 2) { const [a, b] = [...pts.values()]; const d0 = Math.hypot(a!.x - b!.x, a!.y - b!.y); p.x = e.clientX; p.y = e.clientY;
-        const d1 = Math.hypot(a!.x - b!.x, a!.y - b!.y); if (pinch) game.camDist = THREE.MathUtils.clamp(game.camDist * d0 / d1, 4, 26); pinch = d1; return; }
+      if (pts.size === 2) { const [a, b] = [...pts.values()]; if (!a || !b) return; const d0 = Math.hypot(a.x - b.x, a.y - b.y); p.x = e.clientX; p.y = e.clientY;
+        const d1 = Math.hypot(a.x - b.x, a.y - b.y); if (pinch) game.camDist = THREE.MathUtils.clamp(game.camDist * d0 / d1, 4, 26); pinch = d1; return; }
       game.lastDrag = performance.now();
       game.camYaw -= (e.clientX - p.x) * .006; game.camPitch = THREE.MathUtils.clamp(game.camPitch + (e.clientY - p.y) * .004, -.1, 1.2);
       p.x = e.clientX; p.y = e.clientY;
