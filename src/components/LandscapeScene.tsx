@@ -7,9 +7,9 @@ import { PEAK, heightAt, makeGrassTexture, makeTree, seededRandom } from '@/lib/
 import { WIND } from '@/lib/game-world';
 import { Vehicles } from './Vehicles';
 import { WorldFeatures } from './WorldFeatures';
-import { CHUNK_RADIUS, CHUNK_SIZE, makeChunk, makeFarTerrain } from '@/lib/world-chunks';
+import { CHUNK_RADIUS, CHUNK_SIZE, makeChunk, makeFarTerrain, makeFarForest } from '@/lib/world-chunks';
 
-export type LandscapePalette = Record<'sky' | 'mist' | 'grass' | 'grassLight' | 'forest' | 'mountain' | 'leaf' | 'leafLight' | 'bark' | 'sun' | 'toySkin' | 'toyShirt' | 'toyPants' | 'toyHat' | 'bird' | 'birdWing' | 'sand' | 'water' | 'waterDeep' | 'foam' | 'road' | 'car' | 'plane' | 'fuel' | 'gold', THREE.Color>;
+export type LandscapePalette = Record<'sky' | 'mist' | 'grass' | 'grassLight' | 'forest' | 'mountain' | 'earth' | 'leaf' | 'leafLight' | 'bark' | 'sun' | 'toySkin' | 'toyShirt' | 'toyPants' | 'toyHat' | 'bird' | 'birdWing' | 'sand' | 'water' | 'waterShallow' | 'waterDeep' | 'foam' | 'road' | 'car' | 'plane' | 'fuel' | 'gold', THREE.Color>;
 
 function Tree({ palette }: { palette: LandscapePalette }) {
   const tree = useMemo(makeTree, []);
@@ -46,6 +46,8 @@ function ChunkWorld({ palette, game, texture }: { palette: LandscapePalette; gam
   const center = useRef('');
   const [farCenter, setFarCenter] = useState<[number, number]>([0, 0]);
   const far = useMemo(() => makeFarTerrain(farCenter[0], farCenter[1], palette), [farCenter, palette]);
+  const forest = useMemo(() => makeFarForest(farCenter[0], farCenter[1], palette), [farCenter, palette]);
+  useEffect(() => () => forest?.dispose(), [forest]);
   useEffect(() => () => far.dispose(), [far]);
   useFrame(() => {
     const cx = Math.round(game.pos.x / CHUNK_SIZE), cz = Math.round(game.pos.z / CHUNK_SIZE);
@@ -71,9 +73,9 @@ function ChunkWorld({ palette, game, texture }: { palette: LandscapePalette; gam
     if (built || removed || sig !== center.current) { center.current = sig; setChunks([...map.values()]); }
   });
   useEffect(() => () => { cache.current.forEach(c => { c.terrain.dispose(); c.deco?.dispose(); }); cache.current.clear(); }, [palette]);
-  return <><mesh geometry={far} receiveShadow><meshStandardMaterial vertexColors roughness={1} /></mesh>{chunks.map(c => <group key={c.key}>
+  return <><mesh geometry={far} receiveShadow><meshStandardMaterial vertexColors roughness={1} /></mesh>{forest && <mesh geometry={forest}><meshStandardMaterial vertexColors roughness={.95} /></mesh>}{chunks.map(c => <group key={c.key}>
     <mesh geometry={c.terrain} receiveShadow><meshStandardMaterial vertexColors map={texture} roughness={1} bumpMap={texture} bumpScale={.12} /></mesh>
-    {c.deco && <mesh geometry={c.deco} castShadow receiveShadow><meshStandardMaterial vertexColors roughness={.95} flatShading /></mesh>}
+    {c.deco && <mesh geometry={c.deco} castShadow receiveShadow><meshStandardMaterial vertexColors roughness={.95} /></mesh>}
   </group>)}</>;
 }
 
@@ -91,11 +93,10 @@ function FollowWorld({ game, children, sun }: { game: GameState; children: React
 function Atmosphere({ palette, game }: { palette: LandscapePalette; game: GameState }) {
   const sun = useRef<THREE.DirectionalLight>(null);
   const sky = useMemo(() => {
-    const geo = new THREE.SphereGeometry(650, 32, 16);
+    const geo = new THREE.SphereGeometry(2400, 32, 16);
     const p = geo.getAttribute('position'), colors: number[] = [];
     for (let i = 0; i < p.count; i++) {
-      const blend = THREE.MathUtils.smoothstep(p.getY(i) / 650, -.08, .32);
-      palette.sky.clone().lerp(palette.mist, (1 - blend) * .22).toArray(colors, i * 3);
+      palette.sky.toArray(colors, i * 3);
     }
     geo.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
     return geo;
@@ -125,7 +126,7 @@ function Snow({ palette }: { palette: LandscapePalette }) {
   const ref = useRef<THREE.Points>(null);
   const geo = useMemo(() => {
     const g = new THREE.BufferGeometry(), pos = new Float32Array(COUNT * 3), r = seededRandom(726);
-    for (let i = 0; i < COUNT; i++) pos.set([PEAK.x + (r() - .5) * 180, 150 + r() * 60, PEAK.z + (r() - .5) * 180], i * 3);
+    for (let i = 0; i < COUNT; i++) pos.set([PEAK.x + (r() - .5) * 140, 320 + r() * 70, PEAK.z + (r() - .5) * 140], i * 3);
     g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
     return g;
   }, []);
@@ -135,7 +136,7 @@ function Snow({ palette }: { palette: LandscapePalette }) {
     for (let i = 0; i < COUNT; i++) {
       let y = p.getY(i) - (6 + (i % 5)) * dt;
       const x = p.getX(i) + Math.sin(WIND.angle) * WIND.speed * .5 * dt, z = p.getZ(i) + Math.cos(WIND.angle) * WIND.speed * .5 * dt;
-      if (y < Math.max(100, heightAt(x, z))) y = 200;
+      if (y < Math.max(240, heightAt(x, z))) y = 390;
       p.setXYZ(i, x > PEAK.x + 130 ? x - 260 : x < PEAK.x - 130 ? x + 260 : x, y, z > PEAK.z + 130 ? z - 260 : z < PEAK.z - 130 ? z + 260 : z);
     }
     p.needsUpdate = true;

@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
-import { GROUND_GRID, groundAt, heightAt, runwayWeight, seededRandom } from './landscape-geometry';
+import { GROUND_GRID, drainageAt, noiseAt, groundAt, heightAt, runwayWeight, seededRandom } from './landscape-geometry';
 import { SEA_LEVEL, roadDist } from './game-world';
 
 /** Pure, deterministic chunk generation for the streamed open world. */
@@ -10,7 +10,7 @@ if (CHUNK_SIZE / CHUNK_SEGMENTS !== GROUND_GRID) throw new Error('GROUND_GRID mu
 const ROAD_CLEAR = 5;
 export const CHUNK_RADIUS = 2; // chunks loaded in each direction around the player
 
-export type ChunkColors = Record<'grass' | 'grassLight' | 'forest' | 'mountain' | 'mist' | 'bark' | 'leafLight' | 'sun' | 'sand' | 'water' | 'waterDeep' | 'foam', THREE.Color>;
+export type ChunkColors = Record<'grass' | 'grassLight' | 'forest' | 'mountain' | 'mist' | 'bark' | 'leafLight' | 'sun' | 'sand' | 'earth' | 'water' | 'waterShallow' | 'waterDeep' | 'foam', THREE.Color>;
 
 const hash = (x: number, z: number) => {
   let h = (x * 374761393 + z * 668265263) | 0;
@@ -20,20 +20,28 @@ const hash = (x: number, z: number) => {
 
 /** 0..1 forest density, shared by terrain tint and tree placement. */
 export function forestAt(x: number, z: number) {
-  const n = .5 + .3 * Math.sin(x * .021 + 1.3) * Math.cos(z * .017 - .7) + .2 * Math.sin((x + z) * .043);
+  const y = heightAt(x, z), slope = slopeAt(x, z);
+  const n = .22 + .8 * noiseAt(x / 110, z / 100) + .15 * noiseAt(x / 24 + 6, z / 24);
   const near = THREE.MathUtils.smoothstep(Math.hypot(x, z), 26, 60);
-  return THREE.MathUtils.clamp(n * near * (1 - runwayWeight(x, z)), 0, 1);
+  const flank = .6 + .4 * THREE.MathUtils.smoothstep(y, 12, 60);
+  return THREE.MathUtils.clamp(n * flank * near * (1 - runwayWeight(x, z)) * (1 - THREE.MathUtils.smoothstep(y, 115, 175)) * (1 - THREE.MathUtils.smoothstep(slope, 1.1, 2)), 0, 1);
+}
+
+export function slopeAt(x: number, z: number) {
+  return Math.hypot(heightAt(x + 2.5, z) - heightAt(x - 2.5, z), heightAt(x, z + 2.5) - heightAt(x, z - 2.5)) / 5;
 }
 
 function colorAt(x: number, z: number, y: number, c: ChunkColors, out: THREE.Color) {
-  out.copy(c.grass).lerp(c.grassLight, .22 + .18 * Math.sin(x * .13 + z * .05));
-  out.lerp(c.forest, forestAt(x, z) * .75);
-  out.lerp(c.mountain, THREE.MathUtils.smoothstep(y, 26, 48) * .85);
-  out.lerp(c.foam, THREE.MathUtils.smoothstep(y, 95, 125) * .9); // snow caps
-  out.lerp(c.sand, 1 - THREE.MathUtils.smoothstep(y, SEA_LEVEL + .8, SEA_LEVEL + 3));
+  const slope = slopeAt(x, z), d = drainageAt(x, z);
+  out.copy(c.grass).lerp(c.grassLight, .15 + noiseAt(x / 22, z / 22) * .27);
+  out.lerp(c.forest, forestAt(x, z) * .65);
+  out.lerp(c.earth, THREE.MathUtils.smoothstep(slope, .45, .95) * .6);
+  out.lerp(c.mountain, Math.max(THREE.MathUtils.smoothstep(slope, .8, 1.7), THREE.MathUtils.smoothstep(y, 100, 180)) * .95);
+  out.lerp(c.foam, THREE.MathUtils.smoothstep(y + noiseAt(x / 32, z / 32) * 20, 225, 285) * (1 - THREE.MathUtils.smoothstep(slope, 1.2, 2.4)));
+  out.lerp(c.sand, (1 - THREE.MathUtils.smoothstep(Math.abs(d.distance), 2, 15)) * (1 - THREE.MathUtils.smoothstep(slope, .5, 1.3)));
   // underwater: shallows turn turquoise, depths deep blue; a pale foam line marks the shore
-  const depth = SEA_LEVEL - y;
-  if (depth > 0) out.lerp(c.water, THREE.MathUtils.smoothstep(depth, 0, 2.5) * .7).lerp(c.waterDeep, THREE.MathUtils.smoothstep(depth, 2, 12) * .85);
+  const depth = d.level - y;
+  if (depth > 0 && d.distance < 0) out.lerp(c.waterShallow, THREE.MathUtils.smoothstep(depth, 0, 2.5) * .55).lerp(c.waterDeep, THREE.MathUtils.smoothstep(depth, 2, 18) * .65);
   out.lerp(c.sand, Math.max(0, 1 - Math.abs(depth) / .65) * .35);
   return out;
 }
@@ -46,21 +54,22 @@ const itemCache = new Map<string, Item[]>(), obstacleCache = new Map<string, Obs
 export function chunkItems(cx: number, cz: number): Item[] {
   const key = `${cx},${cz}`, hit = itemCache.get(key); if (hit) return hit;
   const ox = cx * CHUNK_SIZE, oz = cz * CHUNK_SIZE, random = seededRandom(hash(cx, cz)), out: Item[] = [];
-  for (let i = 0; i < 260; i++) {
+  for (let i = 0; i < 350; i++) {
     const x = ox + (random() - .5) * CHUNK_SIZE, z = oz + (random() - .5) * CHUNK_SIZE;
     const r = random(), y = groundAt(x, z), f = forestAt(x, z), d = Math.hypot(x, z);
-    if (d < 14 || y < SEA_LEVEL + 1 || roadDist(x, z) < ROAD_CLEAR || runwayWeight(x, z) > .02) continue; // clear hill, roads, airfield
-    if (y < 40 && r < f * .75) {
-      const h = 2 + random() * 3.6, w = .8 + random() * .8;
-      const kind = random() < .3 ? 'broadleaf' : 'pine';
+    const drainage = drainageAt(x, z), slope = slopeAt(x, z);
+    if (d < 14 || (drainage.distance < 3 && y < drainage.level + 2) || roadDist(x, z) < ROAD_CLEAR || runwayWeight(x, z) > .02 || slope > 1.8) continue;
+    if (y < 165 && r < f * .7) {
+      const h = 4 + random() * 6, w = 1.2 + random() * 1.2;
+      const kind = random() < (y > 45 ? .08 : .3) ? 'broadleaf' : 'pine';
       if (out.some(it => (it.kind === 'pine' || it.kind === 'broadleaf') && Math.hypot(it.x - x, it.z - z) < it.sx + w + .7)) continue;
       out.push({ kind, x, y, z, sx: w, sy: h, sz: w, ry: random() * 6, tint: random() * .55 });
-    } else if (r > .93) {
-      const s = .3 + random() * (y > 26 ? 1.6 : .7);
+    } else if (r > (y > 80 ? .83 : .94)) {
+      const s = .3 + random() * (y > 80 ? 2.7 : 1.2);
       out.push({ kind: 'rock', x, y, z, sx: s * 1.3, sy: s * .8, sz: s, ry: random() * 6, tint: random() * .3 });
-    } else if (r > .86 && f < .4 && y < 26) {
+    } else if (r > .86 && f < .5 && y < 60) {
       out.push({ kind: 'flower', x, y: y + .2, z, sx: 1, sy: 1, sz: 1, ry: 0, tint: random() > .5 ? 1 : 0 });
-    } else if (r > .78 && y < 40) {
+    } else if (r > .72 && y < 130) {
       out.push({ kind: f > .55 ? 'shrub' : 'grass', x, y, z, sx: .5 + random() * .4, sy: .5 + random() * .5, sz: .5, ry: random() * 6, tint: random() });
     }
   }
@@ -113,13 +122,13 @@ export function sweepCircle(fromX: number, fromZ: number, x: number, z: number, 
 
 /** Coarse reachable horizon: every vertex uses the very same infinite height field. */
 export function makeFarTerrain(cx: number, cz: number, colors: ChunkColors) {
-  const step = 20, half = 40, p: number[] = [], c: number[] = [], indices: number[] = [], tmp = new THREE.Color();
+  const step = 20, half = 80, p: number[] = [], c: number[] = [], indices: number[] = [], tmp = new THREE.Color();
   for (let z = -half; z <= half; z++) for (let x = -half; x <= half; x++) {
     const wx = cx * CHUNK_SIZE + x * step, wz = cz * CHUNK_SIZE + z * step, y = heightAt(wx, wz);
     p.push(wx, y - .35, wz); colorAt(wx, wz, y, colors, tmp).toArray(c, c.length);
     if (x < half && z < half) {
       // Leave a hole beneath the detailed chunk safety area.
-      if (Math.abs(x * step + step / 2) < 120 && Math.abs(z * step + step / 2) < 120) continue;
+      if (Math.abs(x * step + step / 2) < 200 && Math.abs(z * step + step / 2) < 200) continue;
       const i = (z + half) * (half * 2 + 1) + x + half;
       indices.push(i, i + half * 2 + 1, i + 1, i + 1, i + half * 2 + 1, i + half * 2 + 2);
     }
@@ -162,13 +171,19 @@ export function makeChunk(cx: number, cz: number, colors: ChunkColors) {
   };
   for (const it of chunkItems(cx, cz)) {
     if (it.kind === 'pine' || it.kind === 'broadleaf') {
-      add(new THREE.CylinderGeometry(.1, .2, .6, 6), colors.bark, it, it.sy * .3);
+      add(new THREE.CylinderGeometry(.06, .18, .8, 8), colors.bark, it, it.sy * .4);
       const leaf = colors.forest.clone().lerp(colors.grassLight, it.tint);
       if (it.kind === 'pine') {
-        add(new THREE.ConeGeometry(1, .75, 7), leaf, it, it.sy * .52);
-        add(new THREE.ConeGeometry(.75, .6, 7), leaf.clone().lerp(colors.grassLight, .12), it, it.sy * .8);
-      } else add(new THREE.IcosahedronGeometry(1, 1).scale(1.4, .48, 1.2), leaf, it, it.sy * .75);
-    } else if (it.kind === 'rock') add(new THREE.DodecahedronGeometry(1, 0), colors.mountain.clone().lerp(colors.mist, it.tint), it, it.sy * .75);
+        for (let tier = 0; tier < 4; tier++) {
+          const crown = new THREE.ConeGeometry(1 - tier * .19, .36, 10, 2);
+          const p = crown.getAttribute('position');
+          for (let i = 0; i < p.count; i++) { const a = Math.atan2(p.getZ(i), p.getX(i)); const variation = 1 + .09 * Math.sin(a * 5 + tier); p.setX(i, p.getX(i) * variation); p.setZ(i, p.getZ(i) * variation); }
+          add(crown, leaf.clone().lerp(colors.grassLight, tier * .035), it, it.sy * (.35 + tier * .18));
+        }
+      } else {
+        for (let lobe = 0; lobe < 3; lobe++) add(new THREE.IcosahedronGeometry(1, 1).scale(.8, .3, .8).translate(Math.cos(lobe * 2.1) * .4, 0, Math.sin(lobe * 2.1) * .4), leaf.clone().lerp(colors.grassLight, lobe * .04), it, it.sy * (.68 + lobe * .07));
+      }
+    } else if (it.kind === 'rock') add(new THREE.IcosahedronGeometry(1, 1), colors.mountain.clone().lerp(colors.earth, it.tint), it, it.sy * .75);
     else if (it.kind === 'shrub') add(new THREE.IcosahedronGeometry(.8, 1), colors.grass.clone().lerp(colors.forest, .4), it, it.sy * .5);
     else if (it.kind === 'grass') {
       for (let blade = 0; blade < 3; blade++) add(new THREE.ConeGeometry(.08, .8, 3).rotateZ((blade - 1) * .3), colors.grassLight, it, it.sy * .4);
@@ -178,4 +193,22 @@ export function makeChunk(cx: number, cz: number, colors: ChunkColors) {
   parts.forEach(g => g.dispose());
   deco?.computeVertexNormals();
   return { terrain, deco };
+}
+
+/** Low-detail forest silhouettes beyond the detailed safety area, merged into one draw. */
+export function makeFarForest(cx: number, cz: number, colors: ChunkColors) {
+  const parts: THREE.BufferGeometry[] = [], random = seededRandom(hash(cx, cz) + 73);
+  for (let i = 0; i < 4400; i++) {
+    const x = cx * CHUNK_SIZE + (random() - .5) * 2600, z = cz * CHUNK_SIZE + (random() - .5) * 2600;
+    if (Math.max(Math.abs(x - cx * CHUNK_SIZE), Math.abs(z - cz * CHUNK_SIZE)) < 205 || random() > forestAt(x, z) * .65) continue;
+    const y = heightAt(x, z), d = drainageAt(x, z);
+    if (y < d.level + 2 || y > 165 || roadDist(x, z) < 7 || runwayWeight(x, z) > .02) continue;
+    const g = new THREE.ConeGeometry(2 + random() * 2, 8 + random() * 5, 5).toNonIndexed();
+    g.deleteAttribute('uv'); g.translate(x, y + 4, z);
+    const color = colors.forest.clone().lerp(colors.grass, random() * .2), c = new Float32Array(g.getAttribute('position').count * 3);
+    for (let j = 0; j < c.length; j += 3) color.toArray(c, j);
+    g.setAttribute('color', new THREE.BufferAttribute(c, 3)); parts.push(g);
+  }
+  const geometry = parts.length ? mergeGeometries(parts) : new THREE.BufferGeometry();
+  parts.forEach(g => g.dispose()); return geometry;
 }

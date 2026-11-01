@@ -57,7 +57,7 @@ export default function LandscapeExperience() {
 
   useEffect(() => {
     const css = getComputedStyle(document.documentElement);
-    const names = { sky: 'sky', mist: 'mist', grass: 'grass', grassLight: 'grass-light', forest: 'forest', mountain: 'mountain', leaf: 'leaf', leafLight: 'leaf-light', bark: 'bark', sun: 'sun', toySkin: 'toy-skin', toyShirt: 'toy-shirt', toyPants: 'toy-pants', toyHat: 'toy-hat', bird: 'bird', birdWing: 'bird-wing', sand: 'sand', water: 'water', waterDeep: 'water-deep', foam: 'foam', road: 'road', car: 'car', plane: 'plane', fuel: 'fuel', gold: 'gold' } satisfies Record<keyof LandscapePalette, string>;
+    const names = { sky: 'sky', mist: 'mist', grass: 'grass', grassLight: 'grass-light', forest: 'forest', mountain: 'mountain', earth: 'earth', leaf: 'leaf', leafLight: 'leaf-light', bark: 'bark', sun: 'sun', toySkin: 'toy-skin', toyShirt: 'toy-shirt', toyPants: 'toy-pants', toyHat: 'toy-hat', bird: 'bird', birdWing: 'bird-wing', sand: 'sand', water: 'water', waterShallow: 'water-shallow', waterDeep: 'water-deep', foam: 'foam', road: 'road', car: 'car', plane: 'plane', fuel: 'fuel', gold: 'gold' } satisfies Record<keyof LandscapePalette, string>;
     const entries = Object.entries(names).map(([key, name]) => {
       // Browsers resolve OKLCH to sRGB through canvas; Three.js receives linear color.
       const canvas = document.createElement('canvas'); canvas.width = canvas.height = 1;
@@ -103,7 +103,7 @@ export default function LandscapeExperience() {
   return <div className="landscape-app" ref={container}>
     <SceneBoundary>
       <div className="landscape-canvas" aria-label="Interactive 3D landscape with a golden-green tree and mountain valley">
-        {palette && !unavailable && <Canvas shadows={{ type: THREE.PCFShadowMap }} dpr={[1, 1.5]} camera={{ position: INITIAL_POSITION, fov: 44, near: .2, far: 1000 }} gl={{ antialias: true, powerPreference: 'high-performance' }}
+        {palette && !unavailable && <Canvas shadows={{ type: THREE.PCFShadowMap }} dpr={[1, 1.5]} camera={{ position: INITIAL_POSITION, fov: 44, near: .2, far: 2600 }} gl={{ antialias: true, powerPreference: 'high-performance' }}
           fallback={<div className="scene-loading" role="alert"><p>WebGL isn’t available in this browser.</p><small>Try a browser with hardware acceleration enabled.</small></div>}
           onCreated={({ gl }) => {
             gl.toneMapping = THREE.ACESFilmicToneMapping; gl.toneMappingExposure = 1.05;

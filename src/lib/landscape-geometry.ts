@@ -1,5 +1,7 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
+import { basinHeight } from './geography';
+export { LAKE, PEAK, drainageAt, noiseAt, riverX, riverLevel, riverHalfWidth, waterLevelAt } from './geography';
 
 export function seededRandom(seed = 42) {
   return () => {
@@ -22,29 +24,28 @@ export function runwayWeight(x: number, z: number) {
   const dx = Math.abs(x - RUNWAY.x), dz = Math.abs(z - RUNWAY.z);
   return (1 - THREE.MathUtils.smoothstep(dx, RUNWAY.halfLength + 8, RUNWAY.halfLength + 30)) * (1 - THREE.MathUtils.smoothstep(dz, RUNWAY.halfWidth + 8, RUNWAY.halfWidth + 28));
 }
-export const LAKE = { x: -150, z: -150, r: 48 } as const;
-export const PEAK = { x: 60, z: -620 } as const;
-
 function baseHeight(x: number, z: number) {
   const hill = 8 * Math.exp(-(x * x / 850 + z * z / 1000));
   const rolls = 3.2 * Math.sin(x * .047 + .4) * Math.cos(z * .052) + 1.2 * Math.sin(z * .11 + x * .025);
   const valley = -9 * Math.exp(-((z + 42) ** 2 / 450)) * Math.exp(-(x * x / 900));
   const slopes = 20 * Math.exp(-((Math.abs(x) - 67) ** 2 / 800 + (z + 48) ** 2 / 3000));
-  // far terrain: broad hills and walkable mountain ranges that rise with distance
-  const far = THREE.MathUtils.smoothstep(Math.hypot(x, z), 70, 260);
-  const hills = 14 * vnoise(x / 90, z / 90) + 6 * vnoise(x / 37 + 9, z / 37 - 4);
-  const ridge = 1 - Math.abs(vnoise(x / 160 - 3, z / 160 + 7) * 2 - 1);
-  const mountains = 55 * ridge ** 2.2 * vnoise(x / 300 + 1, z / 300 + 2);
-  // tall, climbable massifs: the great northern peak and a western range
-  const crag = .75 + .25 * vnoise(x / 40, z / 40) + .12 * Math.sin(x / 23) * Math.cos(z / 19);
-  const massif = 165 * Math.exp(-(((x - PEAK.x) ** 2) / 26000 + ((z - PEAK.z) ** 2) / 20000)) * crag
-    + 120 * Math.exp(-(((x + 560) ** 2) / 15000 + ((z - 180) ** 2) / 40000)) * crag;
-  const lake = -14 * Math.exp(-(((x - LAKE.x) ** 2 + (z - LAKE.z) ** 2) / (LAKE.r * LAKE.r)));
-  const land = hill + rolls + valley + slopes - 3 + far * (hills + mountains - 8) + massif + lake;
-  // southern coastline (z 400→520, mirrors COAST_* in game-world): beach then a walkable seabed
-  const coast = THREE.MathUtils.smoothstep(z + 14 * Math.sin(x / 70), 400, 520);
-  const seabed = -15 + 2.5 * Math.sin(x * .06) * Math.cos(z * .05) + 1.5 * vnoise(x / 20, z / 20);
-  return land * (1 - coast) + seabed * coast;
+  const start = hill + rolls + valley + slopes - 3;
+  const blend = THREE.MathUtils.smoothstep(Math.hypot(x, z), 24, 90);
+  let land = start + (basinHeight(x, z) - start) * blend;
+  // Traversable road corridors: smooth the same heightfield used by the ribbons/contact.
+  const roadX = (z: number) => 22 * Math.sin(z / 65) + 10 * Math.sin(z / 23 + 1) - 10 * Math.sin(1);
+  if (z > 10 && z < 400) {
+    const w = 1 - THREE.MathUtils.smoothstep(Math.abs(x - roadX(z)), 4, 14);
+    const center = basinHeight(roadX(z), z);
+    const target = start + (center - start) * blend;
+    land += (target - land) * w;
+  }
+  // Broad west/east mountain pass follows the existing winding road.
+  if (x > -420 && x < 420) {
+    const rz = 70 + 18 * Math.sin(x / 55), w = 1 - THREE.MathUtils.smoothstep(Math.abs(z - rz), 4, 15);
+    land += (basinHeight(x, rz) - land) * w * THREE.MathUtils.smoothstep(Math.hypot(x, z), 30, 90);
+  }
+  return land;
 }
 
 /** Infinite, deterministic ground height (used by streamed chunks). */
