@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef } from 'react';
 import { useFrame, useThree } from '@react-three/fiber';
 import * as THREE from 'three';
-import { LAKE, heightAt } from '@/lib/landscape-geometry';
+import { heightAt } from '@/lib/landscape-geometry';
 import { makeInlandWater } from '@/lib/water-geometry';
 import { FUEL_BOTTLES, HOME_RADIUS, LEVELS, RUNWAY, SEA_LEVEL, WIND, makeRoadGeometry, makeRoadTexture, treasureAt, updateWind } from '@/lib/game-world';
 import type { GameState } from './Explorer';

@@ -5,7 +5,7 @@ import type { OrbitControls as OrbitControlsImpl } from 'three-stdlib';
 import * as THREE from 'three';
 import { Expand, Minimize, Minus, Plus, RotateCcw, Orbit, TreeDeciduous, LoaderCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { createGame, respawn, type CharacterKind } from './Explorer';
+import { createGame, respawn, type CharacterKind, type GameState } from './Explorer';
 import { MapHud } from './MapHud';
 import { toggleVehicle } from './Vehicles';
 import { LandscapeScene, type LandscapePalette } from './LandscapeScene';
@@ -54,6 +54,14 @@ export default function LandscapeExperience() {
     if (knob.current) knob.current.style.transform = `translate(${x * 40}px, ${y * 40}px)`;
   };
   const switchKind = (k: CharacterKind) => { setKind(k); respawn(game, k); };
+
+  // Dev-only verification hooks: live state for headless checks, first-frame signal.
+  useEffect(() => {
+    if (import.meta.env.DEV) (window as { __game?: GameState }).__game = game;
+  }, [game]);
+  useEffect(() => {
+    if (ready) document.querySelector('.landscape-canvas')?.setAttribute('data-scene-ready', 'true');
+  }, [ready]);
 
   useEffect(() => {
     const css = getComputedStyle(document.documentElement);
