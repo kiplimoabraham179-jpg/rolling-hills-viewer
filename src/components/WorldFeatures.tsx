@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef } from 'react';
 import { useFrame, useThree } from '@react-three/fiber';
 import * as THREE from 'three';
 import { LAKE, heightAt } from '@/lib/landscape-geometry';
+import { makeInlandWater } from '@/lib/water-geometry';
 import { FUEL_BOTTLES, HOME_RADIUS, LEVELS, RUNWAY, SEA_LEVEL, WIND, makeRoadGeometry, makeRoadTexture, treasureAt, updateWind } from '@/lib/game-world';
 import type { GameState } from './Explorer';
 import type { LandscapePalette } from './LandscapeScene';
@@ -27,12 +28,12 @@ function Airfield({ palette }: { palette: LandscapePalette }) {
   </group>;
 }
 
-/** Saturated blue water with wind-driven ripples: one sea sheet plus the lake disc. */
+/** Saturated blue water with wind-driven ripples: one sea sheet plus shoreline-clipped lake, river and stream. */
 function Water({ game, palette }: { game: GameState; palette: LandscapePalette }) {
-  const sea = useRef<THREE.Mesh>(null), lake = useRef<THREE.Mesh>(null);
+  const sea = useRef<THREE.Mesh>(null), inland = useRef<THREE.Mesh>(null);
   const seaGeo = useMemo(() => { const g = new THREE.PlaneGeometry(2400, 1600, 72, 48); g.rotateX(-Math.PI / 2); return g; }, []);
-  const lakeGeo = useMemo(() => { const g = new THREE.PlaneGeometry(170, 170, 32, 32); g.rotateX(-Math.PI / 2); return g; }, []);
-  useEffect(() => () => { seaGeo.dispose(); lakeGeo.dispose(); }, [seaGeo, lakeGeo]);
+  const inlandGeo = useMemo(() => makeInlandWater(palette.waterShallow, palette.water, palette.waterDeep), [palette]);
+  useEffect(() => () => { seaGeo.dispose(); inlandGeo.dispose(); }, [seaGeo, inlandGeo]);
   useFrame(({ clock }) => {
     const t = clock.elapsedTime, m = sea.current;
     if (m) {
@@ -45,16 +46,13 @@ function Water({ game, palette }: { game: GameState; palette: LandscapePalette }
       }
       p.needsUpdate = true; seaGeo.computeVertexNormals();
     }
-    const lp = lakeGeo.getAttribute('position');
-    for (let i = 0; i < lp.count; i++) lp.setY(i, Math.sin(lp.getX(i) * .3 + t) * .045 + Math.cos(lp.getZ(i) * .25 - t) * .035);
-    lp.needsUpdate = true; lakeGeo.computeVertexNormals();
+    // gentle bob keeps inland water alive without breaking its clipped shorelines
+    if (inland.current) inland.current.position.y = Math.sin(t * 1.1) * .04 - .02;
   });
-  const waterMat = <meshStandardMaterial color={palette.water} emissive={palette.waterDeep} emissiveIntensity={.45} transparent opacity={.88} roughness={.24} metalness={.08} side={THREE.DoubleSide} />;
+  const waterMat = <meshStandardMaterial vertexColors transparent opacity={.9} roughness={.2} metalness={.06} side={THREE.DoubleSide} />;
   return <>
     <mesh ref={sea} geometry={seaGeo} position={[0, SEA_LEVEL, 1180]}>{waterMat}</mesh>
-    <mesh ref={lake} geometry={lakeGeo} position={[LAKE.x, SEA_LEVEL + .05, LAKE.z]}>
-      {waterMat}
-    </mesh>
+    <mesh ref={inland} geometry={inlandGeo}>{waterMat}</mesh>
   </>;
 }
 
