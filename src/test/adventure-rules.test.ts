@@ -41,7 +41,7 @@ describe('Terrain and runway contact', () => {
     expect(onRunway(-120, 25)).toBe(true); expect(onRunway(100, 25)).toBe(false);
   });
   it('matches deterministic distant chunks and triangle contact at shared edges', () => {
-    const colors = Object.fromEntries(['grass','grassLight','forest','mountain','mist','bark','leafLight','sun','sand','water','waterDeep','foam'].map(k => [k, new THREE.Color()])) as Parameters<typeof makeChunk>[2];
+    const colors = Object.fromEntries(['grass','grassLight','forest','mountain','mist','bark','leafLight','sun','sand','earth','water','waterShallow','waterDeep','foam'].map(k => [k, new THREE.Color()])) as Parameters<typeof makeChunk>[2];
     const a = makeChunk(10, -10, colors), b = makeChunk(11, -10, colors);
     for (let z = -840; z <= -760; z += 2.5) expect(groundAt(840, z)).toBeCloseTo(heightAt(840, z), 8);
     const pa = a.terrain.getAttribute('position'), pb = b.terrain.getAttribute('position');
