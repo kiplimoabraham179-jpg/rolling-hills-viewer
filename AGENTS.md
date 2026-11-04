@@ -14,3 +14,4 @@
 - Resolve Three.js material colors from the global semantic CSS palette so the scene and interface share one design system.
 - Open-world detail chunks and coarse horizon share infinite seeded heightAt; contact uses groundAt triangle interpolation and surfaceAt road/runway offsets so rendering and grounding agree.
 - Treasure transitions and marker eligibility live in pure adventure-rules, shared by scene, HUD and tests; mutable game state is polled by HUD rather than used as a React memo dependency.
+- Dev-only verification hooks (dev builds only): `window.__game` exposes live game state for headless teleport checks, and `.landscape-canvas[data-scene-ready]` marks the first drawn frame.

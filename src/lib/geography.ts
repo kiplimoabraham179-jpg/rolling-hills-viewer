@@ -51,16 +51,16 @@ export function basinHeight(x: number, z: number) {
   const rolling = 5 + 11 * noiseAt(warpX / 125, warpZ / 125) + 3 * (noiseAt(x / 38, z / 38) - .5);
   const ridge = 1 - Math.abs(noiseAt(warpX / 73, warpZ / 100) * 2 - 1);
   const crag = .67 + .33 * ridge * ridge;
-  const north = 275 * Math.exp(-((warpZ + 700) / 160) ** 2) * (.65 + .35 * noiseAt(warpX / 180, 13));
-  const west = 220 * Math.exp(-((warpX + 540) / 160) ** 2) * Math.exp(-((warpZ + 210) / 690) ** 2);
-  const east = 205 * Math.exp(-((warpX - 520) / 155) ** 2) * Math.exp(-((warpZ + 300) / 690) ** 2);
+  const north = 275 * Math.exp(-(((warpZ + 700) / 160) ** 2)) * (.65 + .35 * noiseAt(warpX / 180, 13));
+  const west = 220 * Math.exp(-(((warpX + 540) / 160) ** 2)) * Math.exp(-(((warpZ + 210) / 690) ** 2));
+  const east = 205 * Math.exp(-(((warpX - 520) / 155) ** 2)) * Math.exp(-(((warpZ + 300) / 690) ** 2));
   const peak = 115 * Math.exp(-(((x - PEAK.x) / 90) ** 2 + ((z - PEAK.z) / 110) ** 2));
   const far = smooth(650, 1400, Math.hypot(x, z)) * 160 * (1 - Math.abs(noiseAt(x / 310, z / 310) * 2 - 1)) ** 2;
   // Channels etched into mountain flanks create connected ravines, not random spikes.
   const gullies = (1 - smooth(.025, .14, Math.abs(noiseAt(x / 95 + 5, z / 150) - .5))) * 16;
   let land = rolling + (north + west + east + far) * crag + peak - gullies * smooth(30, 110, north + west + east);
   // A broad low saddle gives a climbable way through the western range.
-  const pass = Math.exp(-((z - (80 + 30 * Math.sin(x / 90))) / 64) ** 2);
+  const pass = Math.exp(-(((z - (80 + 30 * Math.sin(x / 90))) / 64) ** 2));
   land -= west * crag * pass * .77;
   const d = drainageAt(x, z);
   if (d.distance < 55) {
