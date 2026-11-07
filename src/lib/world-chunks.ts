@@ -3,12 +3,32 @@ import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js
 import { GROUND_GRID, drainageAt, noiseAt, groundAt, heightAt, runwayWeight, seededRandom } from './landscape-geometry';
 import { SEA_LEVEL, roadDist } from './game-world';
 
-/** Pure, deterministic chunk generation for the streamed open world. */
-export const CHUNK_SIZE = 80;
-export const CHUNK_SEGMENTS = 32;
+/** Finite, deterministic world: all playable chunks are built before gameplay starts. */
+export const CHUNK_SIZE = 160;
+export const CHUNK_SEGMENTS = 64;
 if (CHUNK_SIZE / CHUNK_SEGMENTS !== GROUND_GRID) throw new Error('GROUND_GRID must match chunk spacing');
 const ROAD_CLEAR = 5;
-export const CHUNK_RADIUS = 2; // chunks loaded in each direction around the player
+export const WORLD_CHUNKS = { minX: -4, maxX: 4, minZ: -7, maxZ: 4 } as const;
+export const WORLD_BOUNDS = { minX: -720, maxX: 720, minZ: -1200, maxZ: 800 } as const;
+const COLLISION_CELL = 20, MAX_OBSTACLE_RADIUS = 5;
+const worldObstacleGrid = new Map<string, Obstacle[]>();
+let worldPreloaded = false;
+export const worldGenerationStats = { chunksBuilt: 0, collisionCellsBuilt: 0, runtimeGenerationCalls: 0 };
+
+export function beginWorldPreload() {
+  worldPreloaded = false;
+  worldObstacleGrid.clear();
+  worldGenerationStats.chunksBuilt = 0;
+  worldGenerationStats.collisionCellsBuilt = 0;
+  worldGenerationStats.runtimeGenerationCalls = 0;
+}
+export function finishWorldPreload() { worldPreloaded = true; }
+const insideChunkRange = (cx: number, cz: number) => cx >= WORLD_CHUNKS.minX && cx <= WORLD_CHUNKS.maxX && cz >= WORLD_CHUNKS.minZ && cz <= WORLD_CHUNKS.maxZ;
+export function clampWorldPosition<T extends { x: number; z: number }>(position: T, margin = 1): T {
+  position.x = THREE.MathUtils.clamp(position.x, WORLD_BOUNDS.minX + margin, WORLD_BOUNDS.maxX - margin);
+  position.z = THREE.MathUtils.clamp(position.z, WORLD_BOUNDS.minZ + margin, WORLD_BOUNDS.maxZ - margin);
+  return position;
+}
 
 export type ChunkColors = Record<'grass' | 'grassLight' | 'forest' | 'mountain' | 'mist' | 'bark' | 'leafLight' | 'sun' | 'sand' | 'earth' | 'water' | 'waterShallow' | 'waterDeep' | 'foam', THREE.Color>;
 
@@ -53,8 +73,10 @@ const itemCache = new Map<string, Item[]>(), obstacleCache = new Map<string, Obs
 /** Deterministic decoration list for a chunk (shared by rendering and collision). */
 export function chunkItems(cx: number, cz: number): Item[] {
   const key = `${cx},${cz}`, hit = itemCache.get(key); if (hit) return hit;
+  if (!insideChunkRange(cx, cz) || worldPreloaded) { if (worldPreloaded) worldGenerationStats.runtimeGenerationCalls++; return []; }
   const ox = cx * CHUNK_SIZE, oz = cz * CHUNK_SIZE, random = seededRandom(hash(cx, cz)), out: Item[] = [];
-  for (let i = 0; i < 350; i++) {
+  const candidates = Math.abs(cx) <= 1 && Math.abs(cz) <= 1 ? 700 : 220;
+  for (let i = 0; i < candidates; i++) {
     const x = ox + (random() - .5) * CHUNK_SIZE, z = oz + (random() - .5) * CHUNK_SIZE;
     const r = random(), y = groundAt(x, z), f = forestAt(x, z), d = Math.hypot(x, z);
     const drainage = drainageAt(x, z), slope = slopeAt(x, z);
@@ -73,37 +95,57 @@ export function chunkItems(cx: number, cz: number): Item[] {
       out.push({ kind: f > .55 ? 'shrub' : 'grass', x, y, z, sx: .5 + random() * .4, sy: .5 + random() * .5, sz: .5, ry: random() * 6, tint: random() });
     }
   }
-  if (itemCache.size > 300) itemCache.clear();
   itemCache.set(key, out);
   return out;
 }
 
 function chunkObstacles(cx: number, cz: number): Obstacle[] {
   const key = `${cx},${cz}`, hit = obstacleCache.get(key); if (hit) return hit;
+  if (!insideChunkRange(cx, cz) || worldPreloaded) { if (worldPreloaded) worldGenerationStats.runtimeGenerationCalls++; return []; }
   const out: Obstacle[] = [];
   for (const it of chunkItems(cx, cz)) {
     if (it.kind === 'pine' || it.kind === 'broadleaf') out.push({ kind: 'tree', x: it.x, z: it.z, r: Math.max(.24, it.sx * .22), bottom: it.y, top: it.y + it.sy * 1.15 });
     else if (it.kind === 'rock') out.push({ kind: 'rock', x: it.x, z: it.z, r: Math.max(it.sx, it.sz), bottom: it.y - .1, top: it.y + it.sy * 1.7 });
   }
-  if (obstacleCache.size > 300) obstacleCache.clear();
   obstacleCache.set(key, out);
+  for (const obstacle of out) {
+    const gx = Math.floor(obstacle.x / COLLISION_CELL), gz = Math.floor(obstacle.z / COLLISION_CELL), cell = `${gx},${gz}`;
+    const list = worldObstacleGrid.get(cell);
+    if (list) list.push(obstacle); else worldObstacleGrid.set(cell, [obstacle]);
+  }
   return out;
 }
+
+/** Prebuilds the obstacle lookup used by all movement after the loading screen. */
+export function preloadChunkCollision(cx: number, cz: number) { chunkObstacles(cx, cz); }
 
 const GOLDEN_TREE: Obstacle = { kind: 'tree', x: 0, z: 0, r: 1.1, bottom: -50, top: 1e3 };
 export type Contact = { hit: boolean; x: number; z: number; kind?: Obstacle['kind'] };
 /** Push a vertical cylinder (radius, base y, height) out of every tree and rock it overlaps. */
 export function collideCircle(x: number, z: number, y: number, radius: number, height = 1.6): Contact {
   const res: Contact = { hit: false, x, z };
-  const ccx = Math.round(x / CHUNK_SIZE), ccz = Math.round(z / CHUNK_SIZE);
-  const list: Obstacle[][] = [[{ ...GOLDEN_TREE, top: heightAt(0, 0) + 9 }]];
-  for (let i = -1; i <= 1; i++) for (let j = -1; j <= 1; j++) list.push(chunkObstacles(ccx + i, ccz + j));
-  for (let pass = 0; pass < 4; pass++) for (const arr of list) for (const o of arr) {
-    if (y > o.top - .15 || y + height < o.bottom) continue;
-    const dx = res.x - o.x, dz = res.z - o.z, d = Math.hypot(dx, dz), min = o.r + radius;
-    if (d >= min) continue;
-    const nx = d > 1e-4 ? dx / d : 1, nz = d > 1e-4 ? dz / d : 0;
-    res.x = o.x + nx * min; res.z = o.z + nz * min; res.hit = true; res.kind = o.kind;
+  const nearby: Obstacle[] = [{ ...GOLDEN_TREE, top: heightAt(0, 0) + 9 }];
+  const reach = radius + MAX_OBSTACLE_RADIUS, minX = Math.floor((x - reach) / COLLISION_CELL), maxX = Math.floor((x + reach) / COLLISION_CELL);
+  const minZ = Math.floor((z - reach) / COLLISION_CELL), maxZ = Math.floor((z + reach) / COLLISION_CELL);
+  for (let gx = minX; gx <= maxX; gx++) for (let gz = minZ; gz <= maxZ; gz++) {
+    const cell = worldObstacleGrid.get(`${gx},${gz}`);
+    if (cell) nearby.push(...cell);
+    else if (!worldPreloaded) {
+      const cx = Math.round(gx * COLLISION_CELL / CHUNK_SIZE), cz = Math.round(gz * COLLISION_CELL / CHUNK_SIZE);
+      const obstacles = chunkObstacles(cx, cz);
+      if (obstacles.length) nearby.push(...obstacles.filter(o => Math.floor(o.x / COLLISION_CELL) === gx && Math.floor(o.z / COLLISION_CELL) === gz));
+    }
+  }
+  for (let pass = 0; pass < 2; pass++) {
+    let changed = false;
+    for (const o of nearby) {
+      if (y > o.top - .15 || y + height < o.bottom) continue;
+      const dx = res.x - o.x, dz = res.z - o.z, d = Math.hypot(dx, dz), min = o.r + radius;
+      if (d >= min) continue;
+      const nx = d > 1e-4 ? dx / d : 1, nz = d > 1e-4 ? dz / d : 0;
+      res.x = o.x + nx * min; res.z = o.z + nz * min; res.hit = true; res.kind = o.kind; changed = true;
+    }
+    if (!changed) break;
   }
   return res;
 }
@@ -122,13 +164,14 @@ export function sweepCircle(fromX: number, fromZ: number, x: number, z: number, 
 
 /** Coarse reachable horizon: every vertex uses the very same infinite height field. */
 export function makeFarTerrain(cx: number, cz: number, colors: ChunkColors) {
-  const step = 20, half = 80, p: number[] = [], c: number[] = [], indices: number[] = [], tmp = new THREE.Color();
+  const step = 40, half = 40, p: number[] = [], c: number[] = [], indices: number[] = [], tmp = new THREE.Color();
+  const originX = cx * CHUNK_SIZE, originZ = cz * CHUNK_SIZE;
   for (let z = -half; z <= half; z++) for (let x = -half; x <= half; x++) {
-    const wx = cx * CHUNK_SIZE + x * step, wz = cz * CHUNK_SIZE + z * step, y = heightAt(wx, wz);
+    const wx = originX + x * step, wz = originZ + z * step, y = heightAt(wx, wz);
     p.push(wx, y - .35, wz); colorAt(wx, wz, y, colors, tmp).toArray(c, c.length);
     if (x < half && z < half) {
-      // Leave a hole beneath the detailed chunk safety area.
-      if (Math.abs(x * step + step / 2) < 200 && Math.abs(z * step + step / 2) < 200) continue;
+      const mx = x * step + step / 2, mz = z * step + step / 2;
+      if (Math.abs(mx) < 720 && Math.abs(mz) < 1200) continue;
       const i = (z + half) * (half * 2 + 1) + x + half;
       indices.push(i, i + half * 2 + 1, i + 1, i + 1, i + half * 2 + 1, i + half * 2 + 2);
     }
@@ -137,6 +180,9 @@ export function makeFarTerrain(cx: number, cz: number, colors: ChunkColors) {
 }
 
 export function makeChunk(cx: number, cz: number, colors: ChunkColors) {
+  if (worldPreloaded) { worldGenerationStats.runtimeGenerationCalls++; throw new Error('Terrain generation attempted after world preload'); }
+  if (!insideChunkRange(cx, cz)) throw new RangeError(`Chunk ${cx},${cz} is outside the preloaded world`);
+  worldGenerationStats.chunksBuilt++;
   const ox = cx * CHUNK_SIZE, oz = cz * CHUNK_SIZE;
   const terrain = new THREE.PlaneGeometry(CHUNK_SIZE, CHUNK_SIZE, CHUNK_SEGMENTS, CHUNK_SEGMENTS);
   terrain.rotateX(-Math.PI / 2);
@@ -197,10 +243,10 @@ export function makeChunk(cx: number, cz: number, colors: ChunkColors) {
 
 /** Low-detail forest silhouettes beyond the detailed safety area, merged into one draw. */
 export function makeFarForest(cx: number, cz: number, colors: ChunkColors) {
-  const parts: THREE.BufferGeometry[] = [], random = seededRandom(hash(cx, cz) + 73);
+  const parts: THREE.BufferGeometry[] = [], random = seededRandom(hash(cx, cz) + 73), originX = cx * CHUNK_SIZE, originZ = cz * CHUNK_SIZE;
   for (let i = 0; i < 4400; i++) {
-    const x = cx * CHUNK_SIZE + (random() - .5) * 2600, z = cz * CHUNK_SIZE + (random() - .5) * 2600;
-    if (Math.max(Math.abs(x - cx * CHUNK_SIZE), Math.abs(z - cz * CHUNK_SIZE)) < 205 || random() > forestAt(x, z) * .65) continue;
+    const x = originX + (random() - .5) * 3200, z = originZ + (random() - .5) * 3200;
+    if ((Math.abs(x - originX) < 740 && Math.abs(z - originZ) < 1220) || random() > forestAt(x, z) * .65) continue;
     const y = heightAt(x, z), d = drainageAt(x, z);
     if (y < d.level + 2 || y > 165 || roadDist(x, z) < 7 || runwayWeight(x, z) > .02) continue;
     const g = new THREE.ConeGeometry(2 + random() * 2, 8 + random() * 5, 5).toNonIndexed();

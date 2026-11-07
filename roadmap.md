@@ -5,3 +5,6 @@
 - [ ] Blend slope/elevation biomes and add natural evergreen forest detail and distant vegetation.
 - [ ] Integrate waterways with minimap, grounding and seven hidden treasure destinations.
 - [ ] Run geography/gameplay tests and desktop/mobile preview checks; record verification limits.
+- [ ] Replace runtime terrain/forest streaming with a finite preloaded world and a real loading gate.
+- [ ] Remove airplane approach/flight frame stalls without changing vehicle or treasure gameplay.
+- [ ] Verify build, typecheck, existing tests, airplane boarding/flight, and traversal across old chunk boundaries.
